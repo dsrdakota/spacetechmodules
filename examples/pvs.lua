@@ -18,8 +18,12 @@ hook.Add("PlayerInitialSpawn", "PVSPlayerInitialSpawn", function(ply)
 end)
 
 -- Force update pvs for a player
-concommand.Add("updatepvs", function(ply)
+concommand.Add("pvs_update", function(ply)
 	ply:UpdatePVS()
+end)
+
+concommand.Add("pvs_setupdate", function(ply, cmd, args)
+	pvsSetUpdateTime(tonumber(args[1]))
 end)
 
 local Owner, Parent
