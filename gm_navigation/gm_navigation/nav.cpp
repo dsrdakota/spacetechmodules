@@ -1,0 +1,880 @@
+/*
+    gm_navigation
+    By Spacetech
+*/
+
+#include "nav.h"
+
+Nav::Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize)
+{
+	GMU = gmu;
+	fs = filesystem;
+
+	FoundPath = false;
+	Heuristic = HEURISTIC_MANHATTAN;
+
+	Generated = false;
+	Generating = false;
+
+	GenerationStepSize = GridSize;
+	GenerationMaxDistance = -1;
+	AddVector = Vector(0, 0, GridSize / 2);
+
+	// I don't believe this is required but I will leave this here for now.
+	// I wanted to make sure that enough memory is reserved but doesn't it dynamically expand
+	Nodes.EnsureCapacity(10240);
+	WalkableSeedList.EnsureCapacity(16);
+
+#ifdef FILEBUG
+	fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+#endif
+}
+
+Nav::~Nav()
+{
+	Msg("Deconstructing Nav!?\n");
+	Nodes.PurgeAndDeleteElements();
+	//Path.PurgeAndDeleteElements();
+	//Opened.PurgeAndDeleteElements();
+   // Closed.PurgeAndDeleteElements();
+}
+
+Node *Nav::GetNode(const Vector &Pos)
+{
+	const float Tolerance = 0.45f * GenerationStepSize;
+
+	Node *Node;
+	for(int i = 0; i < Nodes.Count(); i++)
+	{
+		Node = Nodes[i];
+		float dx = fabs(Node->Pos.x - Pos.x);
+		float dy = fabs(Node->Pos.y - Pos.y);
+		float dz = fabs(Node->Pos.z - Pos.z);
+		if(dx < Tolerance && dy < Tolerance && dz < Tolerance)
+		{
+			return Node;
+		}
+	}
+
+	return NULL;
+}
+
+Node *Nav::GetNodeByID(int ID)
+{
+	if(!Nodes.IsValidIndex(ID))
+	{
+		return NULL;
+	}
+	return Nodes.Element(ID);
+}
+
+Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node *Source)
+{
+	if(GenerationMaxDistance > 0)
+	{
+		if(Origin.DistTo(Pos) > GenerationMaxDistance)
+		{
+			return NULL;
+		}
+	}
+
+	// check if a node exists at this location
+	Node *node = GetNode(Pos);
+	
+	// if no node exists, create one
+	bool UseNew = false;
+	if(node == NULL)
+	{
+		UseNew = true;
+		node = new Node(Pos, Normal, Source);
+		node->SetID(Nodes.AddToTail(node));
+#ifdef FILEBUG
+		fs->FPrintf(fh, "Adding Node <%f, %f>\n", Pos.x, Pos.y);
+#endif
+	}
+
+	// connect source node to new node
+	Source->ConnectTo(node, Dir);
+
+	node->ConnectTo(Source, OppositeDirection(Dir));
+	node->MarkAsVisited(OppositeDirection(Dir));
+
+	/* hmmmmm
+	// optimization: if deltaZ changes very little, assume connection is commutative
+	const float zTolerance = 50.0f;
+	if(fabs(Source->GetPosition()->z - Pos.z) < zTolerance)
+	{
+		Node->ConnectTo(Source, OppositeDirection(Dir));
+		Node->MarkAsVisited(OppositeDirection(Dir));
+	}
+	*/
+
+	if(UseNew)
+	{
+		// new node becomes current node
+		CurrentNode = node;
+	}
+
+	return node;
+}
+
+int Nav::GetGridSize()
+{
+	return GenerationStepSize;
+}
+
+bool Nav::IsGenerated()
+{
+	return Generated;
+}
+
+float Nav::SnapToGrid(float x)
+{
+	return Round(x, GetGridSize());
+}
+
+Vector Nav::SnapToGrid(const Vector& in, bool snapX, bool snapY)
+{
+	int scale = GetGridSize();
+
+	Vector out(in);
+
+	if(snapX)
+	{
+		out.x = Round(in.x, scale);
+	}
+
+	if(snapY)
+	{
+		out.y = Round(in.y, scale);
+	}
+
+	return out;
+}
+
+float Nav::Round(float Val, float Unit)
+{
+	Val = Val + ((Val < 0.0f) ? -Unit*0.5f : Unit*0.5f);
+	return (float)(Unit * ((int)Val) / (int)Unit);
+}
+
+NavDirType Nav::OppositeDirection(NavDirType Dir)
+{
+	switch(Dir)
+	{
+		case NORTH: return SOUTH;
+		case SOUTH: return NORTH;
+		case EAST:	return WEST;
+		case WEST:	return EAST;
+#ifdef DIAGONAL
+		case NORTHEAST: return SOUTHWEST;
+		case NORTHWEST: return SOUTHEAST;
+		case SOUTHEAST:	return NORTHWEST;
+		case SOUTHWEST: return NORTHEAST;
+#endif
+	}
+
+	return NORTH;
+}
+
+bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
+{
+	Vector to;
+	to.x = pos.x;
+	to.y = pos.y;
+	to.z = pos.z - 9999.9f;
+
+	float offset;
+	Vector from;
+	trace_t result;
+
+	const float maxOffset = 100.0f;
+	const float inc = 10.0f;
+
+	struct GroundLayerInfo
+	{
+		float ground;
+		Vector normal;
+	}
+	layer[ MAX_GROUND_LAYERS ];
+	int layerCount = 0;
+
+	for( offset = 1.0f; offset < maxOffset; offset += inc )
+	{
+		from = pos + Vector( 0, 0, offset );
+
+		GMU->TraceLine( from, to, MASK_PLAYERSOLID_BRUSHONLY, &result);
+
+		// if the trace came down thru a door, ignore the door and try again
+		// also ignore breakable floors
+
+		if (result.startsolid == false)
+		{
+			// if we didnt start inside a solid area, the trace hit a ground layer
+
+			// if this is a new ground layer, add it to the set
+			if (layerCount == 0 || result.endpos.z > layer[ layerCount-1 ].ground)
+			{
+				layer[ layerCount ].ground = result.endpos.z;
+				if (result.plane.normal.IsZero())
+					layer[ layerCount ].normal = Vector( 0, 0, 1 );
+				else
+					layer[ layerCount ].normal = result.plane.normal;
+
+				++layerCount;
+						
+				if (layerCount == MAX_GROUND_LAYERS)
+					break;
+			}
+		}
+	}
+
+	if (layerCount == 0)
+		return false;
+
+	// find the lowest layer that allows a player to stand or crouch upon it
+	int i;
+	for( i=0; i<layerCount-1; ++i )
+	{
+		if (layer[i+1].ground - layer[i].ground >= HumanHeight)
+			break;		
+	}
+
+	*height = layer[ i ].ground;
+
+	if (normal)
+		*normal = layer[ i ].normal;
+
+	return true;
+}
+
+void Nav::StartGeneration()
+{
+	if(WalkableSeedList.Count() == 0)
+	{
+		return;
+	}
+	
+	SeedIndex = 0;
+	CurrentNode = NULL;
+
+	Generating = true;
+	Generated = false;
+
+	Nodes.RemoveAll();
+}
+
+void Nav::SetupMaxDistance(const Vector &Pos, int MaxDistance)
+{
+	Origin = Pos;
+	GenerationMaxDistance = MaxDistance;
+}
+
+void Nav::AddWalkableSeed(const Vector &Pos, const Vector &Normal)
+{
+	WalkableSeedSpot Seed;
+
+	Seed.Pos = SnapToGrid(Pos);
+	Seed.Normal = Normal;
+
+	WalkableSeedList.AddToTail(Seed);
+}
+
+void Nav::ClearWalkableSeeds()
+{
+	WalkableSeedList.RemoveAll();
+}
+
+Node *Nav::GetNextWalkableSeedNode()
+{
+	if(!WalkableSeedList.IsValidIndex(SeedIndex))
+	{
+		return NULL;
+	}
+
+	WalkableSeedSpot Spot = WalkableSeedList.Element(SeedIndex);
+
+	SeedIndex = WalkableSeedList.Next(SeedIndex);
+
+	if(GetNode(Spot.Pos) == NULL)
+	{
+		if(GenerationMaxDistance > 0)
+		{
+			if(Origin.DistTo(Spot.Pos) > GenerationMaxDistance)
+			{
+#ifdef FILEBUG
+				fs->FPrintf(fh, "GetNextWalkableSeedNode: Skipping Seed\n");
+#endif
+				return GetNextWalkableSeedNode();
+			}
+		}
+#ifdef FILEBUG
+		fs->FPrintf(fh, "GetNextWalkableSeedNode: Adding Node\n");
+#endif
+		Node *node = new Node(Spot.Pos, Spot.Normal, NULL);
+		node->SetID(Nodes.AddToTail(node));
+		return node;
+	}
+
+#ifdef FILEBUG
+	fs->FPrintf(fh, "GetNextWalkableSeedNode: Next Seed\n");
+#endif
+
+	return GetNextWalkableSeedNode();
+}
+
+bool Nav::SampleStep()
+{
+	if(IsGenerated())
+	{
+		return true;
+	}
+
+	if(!Generating)
+	{
+		return false;
+	}
+
+	// take a step
+	while(true)
+	{
+		if(CurrentNode == NULL)
+		{
+			CurrentNode = GetNextWalkableSeedNode();
+
+			if(CurrentNode == NULL)
+			{
+				Generated = true;
+				return true;
+			}
+		}
+
+		//
+		// Take a step from this node
+		//
+
+#ifdef FILEBUG
+		fs->FPrintf(fh, "Stepping From Node\n");
+#endif
+		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		{
+#ifdef FILEBUG
+			fs->FPrintf(fh, "Checking Direction: %i\n", Dir);
+#endif
+			if(!CurrentNode->HasVisited((NavDirType)Dir))
+			{
+				// have not searched in this direction yet
+
+				// start at current node position
+				Vector Pos = *CurrentNode->GetPosition();
+
+#ifdef FILEBUG
+				fs->FPrintf(fh, "1 <%f, %f>\n", Pos.x, Pos.y);
+#endif
+				switch(Dir)
+				{
+					case NORTH:	Pos.y += GenerationStepSize; break;
+					case SOUTH:	Pos.y -= GenerationStepSize; break;
+					case EAST:	Pos.x += GenerationStepSize; break;
+					case WEST:	Pos.x -= GenerationStepSize; break;
+#ifdef DIAGONAL
+					case NORTHEAST:	Pos.x += GenerationStepSize; Pos.y += GenerationStepSize; break;
+					case NORTHWEST:	Pos.x -= GenerationStepSize; Pos.y += GenerationStepSize; break;
+					case SOUTHEAST: Pos.x += GenerationStepSize; Pos.y -= GenerationStepSize; break;
+					case SOUTHWEST:	Pos.x -= GenerationStepSize; Pos.y -= GenerationStepSize; break;
+#endif
+				}
+
+#ifdef FILEBUG
+				fs->FPrintf(fh, "2 <%f, %f>\n\n", Pos.x, Pos.y);
+#endif
+
+				GenerationDir = (NavDirType)Dir;
+
+				// mark direction as visited
+				CurrentNode->MarkAsVisited(GenerationDir);
+
+				// test if we can move to new position
+				Vector to;
+
+				// modify position to account for change in ground level during step
+				to.x = Pos.x;
+				to.y = Pos.y;
+
+				Vector toNormal;
+
+				if(GetGroundHeight(Pos, &to.z, &toNormal) == false)
+				{
+#ifdef FILEBUG
+					fs->FPrintf(fh, "Ground Height Fail\n");
+#endif
+					return false;
+				}
+
+				Vector from = *CurrentNode->GetPosition();
+
+				Vector fromOrigin = from + AddVector;
+				Vector toOrigin = to + AddVector;
+
+				trace_t result;
+
+				GMU->TraceLine(fromOrigin, toOrigin, MASK_PLAYERSOLID_BRUSHONLY, &result);
+
+				bool walkable;
+
+				if(result.fraction == 1.0f && !result.startsolid)
+				{
+					// the trace didnt hit anything - clear
+
+					float toGround = to.z;
+					float fromGround = from.z;
+
+					float epsilon = 0.1f;
+
+					// check if ledge is too high to reach or will cause us to fall to our death
+					// Using GenerationStepSize instead of JumpCrouchHeight so that stairs will work with different grid sizes
+					if(toGround - fromGround > GenerationStepSize + epsilon || fromGround - toGround > DeathDrop)
+					{
+						walkable = false;
+#ifdef FILEBUG
+						fs->FPrintf(fh, "Bad Ledge\n");
+#endif
+					}
+					else
+					{
+						// check surface normals along this step to see if we would cross any impassable slopes
+						Vector delta = to - from;
+						const float inc = 2.0f;
+						float along = inc;
+						bool done = false;
+						float ground;
+						Vector normal;
+
+						walkable = true;
+
+						while(!done)
+						{
+							Vector p;
+
+							// need to guarantee that we test the exact edges
+							if(along >= GenerationStepSize)
+							{
+								p = to;
+								done = true;
+							}
+							else
+							{
+								p = from + delta * (along / GenerationStepSize);
+							}
+
+							if(GetGroundHeight(p, &ground, &normal) == false)
+							{
+								walkable = false;
+#ifdef FILEBUG
+								fs->FPrintf(fh, "Bad Node Path\n");
+#endif
+								break;
+							}
+
+							// check for maximum allowed slope
+							if(normal.z < 0.65)
+							{
+								walkable = false;
+#ifdef FILEBUG
+								fs->FPrintf(fh, "Slope\n");
+#endif
+								break;
+							}
+
+							along += inc;					
+						}
+					}
+				}
+				else // TraceLine hit something...
+				{
+					walkable = false;
+#ifdef FILEBUG
+					fs->FPrintf(fh, "Hit Something\n");
+#endif
+				}
+
+				if(walkable)
+				{
+					AddNode(to, toNormal, GenerationDir, CurrentNode);
+				}
+
+				return false;
+			}
+		}
+
+		// all directions have been searched from this node - pop back to its parent and continue
+		CurrentNode = CurrentNode->GetParent();
+	}
+}
+
+bool Nav::Save(const char *Filename)
+{
+	CUtlBuffer buf;
+
+	Node *node, *connection;
+
+	int TotalConnections = 0;
+	int NodeTotal = Nodes.Count();
+
+	//////////////////////////////////////////////
+	// Nodes
+	buf.PutInt(NodeTotal);
+
+	for(int i = 0; i < NodeTotal; i++)
+	{
+		node = Nodes[i];
+
+		buf.PutFloat(node->Pos.x);
+		buf.PutFloat(node->Pos.y);
+		buf.PutFloat(node->Pos.z);
+
+		buf.PutFloat(node->Normal.x);
+		buf.PutFloat(node->Normal.y);
+		buf.PutFloat(node->Normal.z);
+
+		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		{
+			if(node->GetConnectedNode((NavDirType)Dir) != NULL)
+			{
+				TotalConnections++;
+			}
+		}
+	}
+	//////////////////////////////////////////////
+
+	//////////////////////////////////////////////
+	// Connections
+	buf.PutInt(TotalConnections);
+
+	for(int i = 0; i < NodeTotal; i++)
+	{
+		node = Nodes[i];
+		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		{
+			connection = node->GetConnectedNode((NavDirType)Dir);
+			if(connection != NULL)
+			{
+				buf.PutInt(Dir);
+				buf.PutInt(node->GetID());
+				buf.PutInt(connection->GetID());
+			}
+		}
+	}
+	//////////////////////////////////////////////
+
+	//////////////////////////////////////////////
+	// Write File
+
+	FileHandle_t fh = fs->Open(Filename, "wb");
+	if(!fh)
+	{
+		return false;
+	}
+
+	fs->Write(buf.Base(), buf.TellPut(), fh);
+	fs->Close(fh);
+	//////////////////////////////////////////////
+
+	return true;
+}
+
+bool Nav::Load(const char *Filename)
+{
+	CUtlBuffer buf;
+
+	if(!fs->ReadFile(Filename, "MOD", buf))
+	{
+		return false;
+	}
+
+	buf.SeekGet(CUtlBuffer::SEEK_HEAD, 0);
+
+	Node *node;
+	int Dir, SrcID, DestID;
+
+	///////////////////////////
+	// The Best Fix EVER MADE
+	Nodes.RemoveAll();
+	///////////////////////////
+
+	//////////////////////////////////////////////
+	// Nodes
+	int NodeTotal = buf.GetInt();
+
+	for(int i = 0; i < NodeTotal; i++)
+	{
+		Vector Pos, Normal;
+		Pos.x = buf.GetFloat();
+		Pos.y = buf.GetFloat();
+		Pos.z = buf.GetFloat();
+
+		Normal.x = buf.GetFloat();
+		Normal.y = buf.GetFloat();
+		Normal.z = buf.GetFloat();
+
+		node = new Node(Pos, Normal, NULL);
+		node->SetID(Nodes.AddToTail(node));
+	}
+	//////////////////////////////////////////////
+
+	//////////////////////////////////////////////
+	// Connections
+	int TotalConnections = buf.GetInt();
+
+	for(int i = 0; i < TotalConnections; i++)
+	{
+		Dir = buf.GetInt();
+		SrcID = buf.GetInt();
+		DestID = buf.GetInt();
+		Nodes[SrcID]->ConnectTo(Nodes[DestID], (NavDirType)Dir);
+	}
+
+	//////////////////////////////////////////////
+
+	return true;
+}
+
+CUtlVector<Node*>& Nav::GetNodes()
+{
+	return Nodes;
+}
+
+Node *Nav::GetClosestNode(const Vector &Pos)
+{
+	float NodeDist;
+	float Distance = -1;
+	
+	Node *Node, *ClosestNode;
+
+	for(int i = 0; i < Nodes.Count(); i++)
+	{
+		Node = Nodes[i];
+		NodeDist = Pos.DistTo(Node->Pos);
+		if(Distance == -1 || NodeDist < Distance)
+		{
+			ClosestNode = Node;
+			Distance = NodeDist;
+		}
+	}
+
+	return ClosestNode;
+}
+
+void Nav::Reset()
+{
+	Node *node;
+	for(int i = 0; i < Nodes.Count(); i++)
+	{
+		node = Nodes[i];
+		node->SetClosed(false);
+		node->SetOpened(false);
+	}
+	Path.RemoveAll();
+	Opened.RemoveAll();
+	Closed.RemoveAll();
+}
+
+void Nav::AddOpenedNode(Node *node)
+{
+	node->SetOpened(true);
+	Opened.AddToTail(node);
+}
+
+void Nav::AddClosedNode(Node *node)
+{
+	node->SetClosed(true);
+	bool Removed = Opened.FindAndRemove(node);
+	if(!Removed)
+	{
+		Msg("Failed to remove Node!?\n");
+	}
+}
+
+float Nav::HeuristicDistance(const Vector *StartPos, const Vector *EndPos)
+{
+	// Seems like HEURISTIC_EUCLIDEAN == HEURISTIC_DISTANCE
+	if(Heuristic == HEURISTIC_MANHATTAN)
+	{
+		return ManhattanDistance(StartPos, EndPos);
+	}
+	else if(Heuristic == HEURISTIC_EUCLIDEAN)
+	{
+		return EuclideanDistance(StartPos, EndPos);
+	}
+	else if(Heuristic == HEURISTIC_CUSTOM)
+	{
+		//gLua->PushReference(HeuristicRef);
+			//GMOD_PushVector(StartPos);
+			//GMOD_PushVector(EndPos);
+		//gLua->Call(2, 1);
+		//return gLua->GetNumber(1);
+	}
+	return NULL;
+}
+
+float Nav::ManhattanDistance(const Vector *StartPos, const Vector *EndPos)
+{
+	return (abs(EndPos->x - StartPos->x) + abs(EndPos->y - StartPos->y) + abs(EndPos->z - StartPos->z));
+}
+
+// u clid e an
+float Nav::EuclideanDistance(const Vector *StartPos, const Vector *EndPos)
+{
+	return sqrt(pow(EndPos->x - StartPos->x, 2) + pow(EndPos->y - StartPos->y, 2) + pow(EndPos->z - StartPos->z, 2));
+}
+
+Node *Nav::FindLowestF()
+{
+	float BestScoreF = NULL;
+	Node *node, *winner = NULL;
+	for(int i = 0; i < Opened.Count(); i++)
+	{
+		node = Opened[i];
+		if(BestScoreF == NULL || node->GetScoreF() < BestScoreF)
+		{
+			winner = node;
+			BestScoreF = node->GetScoreF();
+		}
+	}
+	return winner;
+}
+
+CUtlVector<Node*>& Nav::FindPath()
+{
+	Reset();
+
+	FoundPath = false;
+
+	if(GetStart() == GetEnd())
+	{
+		return Path;
+	}
+
+	// 1) Add the starting node to the open list.
+	AddOpenedNode(Start);
+	Start->SetStatus(NULL, 0, 0, 0);
+
+	float CurrentScoreG;
+	float ScoreF, ScoreG, ScoreH;
+	Node *Current = NULL, *LastNode = NULL, *Connection = NULL;
+	
+#ifdef FILEBUG
+	fs->FPrintf(fh, "Added Node\n");
+#endif
+
+	// 2) Repeat the following:
+	while(true)
+	{
+		// a) Look for the lowest F cost square on the open list. We refer to this as the current square.
+		Current = FindLowestF();
+
+		if(Current != NULL)
+		{
+			LastNode = Current;
+
+			if(Current->GetPosition() == End->GetPosition())
+			{
+				FoundPath = true;
+				break;
+			}
+			else
+			{
+				CurrentScoreG = Current->GetScoreG();
+
+				// b) Switch it to the closed list.
+				AddClosedNode(Current);
+
+				// c) For each of the nodes linked to this node...
+				ScoreH = HeuristicDistance(Current->GetPosition(), End->GetPosition());
+				
+				if(ScoreH != NULL)
+				{
+					for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+					{
+						Connection = Current->GetConnectedNode((NavDirType)Dir);
+						if(Connection != NULL)
+						{
+							if(!Connection->IsClosed())
+							{
+
+								// If it isn’t on the open list, add it to the open list. Make the current node the parent of this node. Record the F, G, and H costs of the node. 
+								if(!Connection->IsOpened())
+								{
+									AddOpenedNode(Connection);
+									ScoreG = CurrentScoreG + HeuristicDistance(Current->GetPosition(), Connection->GetPosition());
+									ScoreF = ScoreG + ScoreH;
+									Connection->SetStatus(Current, ScoreF, ScoreG, ScoreH);
+								}
+
+								if(CurrentScoreG > ScoreG)
+								{
+									Connection->SetAStarParent(Current);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	return CalcPath(LastNode);
+}
+
+CUtlVector<Node*>& Nav::CalcPath(Node *Current)
+{
+	while(true)
+	{
+		if(Current == NULL)
+		{
+			break;
+		}
+		Path.AddToHead(Current);
+		Current = Current->GetAStarParent();
+	}
+	return Path;
+}
+
+bool Nav::HasFoundPath()
+{
+	return FoundPath;
+}
+
+int Nav::GetHeuristic()
+{
+	return Heuristic;
+}
+
+Node *Nav::GetStart()
+{
+	return Start;
+}
+
+Node *Nav::GetEnd()
+{
+	return End;
+}
+
+void Nav::SetHeuristic(int H)
+{
+	Heuristic = H;
+}
+
+void Nav::SetStart(Node *start)
+{
+	Start = start;
+}
+
+void Nav::SetEnd(Node *end)
+{
+	End = end;
+}
