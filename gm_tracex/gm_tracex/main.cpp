@@ -27,7 +27,7 @@
 
 GMOD_MODULE(Init, Shutdown);
 
-int EntityRef, VectorRef;
+int EntityRef, VectorRef, GetWorldEntityRef;
 
 ILuaInterface *gLua = NULL;
 IVEngineServer *engine = NULL;
@@ -66,6 +66,12 @@ Vector& GMOD_GetVector(int stackPos)
 
 ILuaObject* GMOD_PushEntity(int Index)
 {
+	if(Index == 0 && gLua->IsServer())
+	{
+		gLua->PushReference(GetWorldEntityRef);
+		gLua->Call(0, 1);
+		return gLua->GetReturn(0);
+	}
 	gLua->PushReference(EntityRef);
 		gLua->Push((float)Index);
 	gLua->Call(1, 1);
@@ -74,11 +80,12 @@ ILuaObject* GMOD_PushEntity(int Index)
 
 ////////////////////////////////////////////////////////////
 
-class GMOD_TraceFilter : public CTraceFilter
+class GMOD_TraceFilter : public ITraceFilter
 {
 public:
-	GMOD_TraceFilter(int ShouldHitEntityRef) :
+	GMOD_TraceFilter(int ShouldHitEntityRef, bool ShouldIgnoreWorld) :
 		m_bFinished(false),
+		m_bShouldIgnoreWorld(ShouldIgnoreWorld),
 		m_iShouldHitEntityRef(ShouldHitEntityRef)
 	{}
 
@@ -126,8 +133,18 @@ public:
 		return true;
 	}
 
+	TraceType_t	GetTraceType() const
+	{
+		if(m_bShouldIgnoreWorld)
+		{
+			return TRACE_ENTITIES_ONLY;
+		}
+		return TRACE_EVERYTHING;
+	}
+
 private:
 	bool m_bFinished;
+	bool m_bShouldIgnoreWorld;
 	int m_iShouldHitEntityRef;
 };
 
@@ -162,16 +179,20 @@ ILuaObject *FillTraceTable(trace_t *ptr)
 	{
 		EntIndex = Ent->entindex();
 	}
+	else
+	{
+		tr->SetMember("HitNothing", true);
+	}
 
 	tr->SetMember("FractionLeftSolid", ptr->fractionleftsolid);
 	
 	tr->SetMember("HitWorld", EntIndex == 0 ? false : true);
-	tr->SetMember("HitNonWorld", EntIndex > 0 ? false : true);
+	tr->SetMember("HitNonWorld", EntIndex == 0 ? true : false); // EntIndex > 0 ? false : true
 
 	tr->SetMember("Fraction", ptr->fraction);
 	tr->SetMember("HitTexture", ptr->surface.name);
 
-	if(EntIndex > 0)
+	if(EntIndex >= 0)
 	{
 		ILuaObject* oEntity = GMOD_PushEntity(EntIndex);
 		tr->SetMember("Entity", oEntity);
@@ -220,11 +241,14 @@ LUA_FUNCTION(TXTraceLine)
 {
 	gLua->CheckType(1, GLua::TYPE_TABLE);
 	gLua->CheckType(2, GLua::TYPE_FUNCTION);
+	gLua->CheckType(3, GLua::TYPE_BOOL);
 
 	////////////////////////////////////////////////////////////
 
 	ILuaObject *Table = gLua->GetObject(1);
 	int ShouldHitEntityRef = gLua->GetReference(2);
+	bool ShouldIgnoreWorld = gLua->GetBool(3);
+
 	////////////////////////////////////////////////////////////
 
 	Vector StartPos = GMOD_GetVector(Table->GetMemberUserData("start"));
@@ -242,7 +266,7 @@ LUA_FUNCTION(TXTraceLine)
 	////////////////////////////////////////////////////////////
 	
 	trace_t ptr;
-	GMOD_TraceFilter filter(ShouldHitEntityRef);
+	GMOD_TraceFilter filter(ShouldHitEntityRef, ShouldIgnoreWorld);
 	GMOD_TraceLine(StartPos, EndPos, Mask, &filter, &ptr);
 
 	gLua->FreeReference(ShouldHitEntityRef);
@@ -256,11 +280,13 @@ LUA_FUNCTION(TXTraceHull)
 {
 	gLua->CheckType(1, GLua::TYPE_TABLE);
 	gLua->CheckType(2, GLua::TYPE_FUNCTION);
+	gLua->CheckType(3, GLua::TYPE_BOOL);
 
 	////////////////////////////////////////////////////////////
 
 	ILuaObject *Table = gLua->GetObject(1);
 	int ShouldHitEntityRef = gLua->GetReference(2);
+	bool ShouldIgnoreWorld = gLua->GetBool(3);
 
 	////////////////////////////////////////////////////////////
 
@@ -286,7 +312,7 @@ LUA_FUNCTION(TXTraceHull)
 	////////////////////////////////////////////////////////////
 	
 	trace_t ptr;
-	GMOD_TraceFilter filter(ShouldHitEntityRef);
+	GMOD_TraceFilter filter(ShouldHitEntityRef, ShouldIgnoreWorld);
 	GMOD_TraceHull(StartPos, EndPos, Mins, Maxs, Mask, &filter, &ptr);
 
 	gLua->FreeReference(ShouldHitEntityRef);
@@ -332,6 +358,18 @@ int Init(lua_State* L)
 	oVector->Push();
 	VectorRef = gLua->GetReference(-1, true);
 	oVector->UnReference();
+
+	if(gLua->IsServer())
+	{
+		ILuaObject *oGetWorldEntity = gLua->GetGlobal("GetWorldEntity");
+		oGetWorldEntity->Push();
+		GetWorldEntityRef = gLua->GetReference(-1, true);
+		oGetWorldEntity->UnReference();
+	}
+	else
+	{
+		GetWorldEntityRef = NULL;
+	}
 
 	ILuaObject* txTable = gLua->GetNewTable();
 		txTable->SetMember("TraceLine", TXTraceLine);

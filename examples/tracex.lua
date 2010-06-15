@@ -17,6 +17,7 @@ concommand.Add("tracex_line", function(ply)
 	local Count = 0
 	
 	local Callback = function(HitEntity)
+		print("ahhh", HitEntity)
 		if(HitEntity != ply) then
 			print(HitEntity)
 			Count = Count + 1
@@ -26,7 +27,7 @@ concommand.Add("tracex_line", function(ply)
 	end
 	
 	-- profiler.Start()
-	local tr = tracex.TraceLine(Trace, Callback)
+	local tr = tracex.TraceLine(Trace, Callback, true) -- Last arg is ShouldIgnoreWorld
 	-- profiler.Dump()
 	
 	PrintTable(tr)
@@ -73,7 +74,7 @@ concommand.Add("tracex_hull", function(ply)
 	end
 	
 	//profiler.Start()
-	local tr = tracex.TraceHull(Trace, Callback)
+	local tr = tracex.TraceHull(Trace, Callback, false)
 	//profiler.Dump()
 	
 	//PrintTable(tr)
