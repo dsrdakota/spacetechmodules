@@ -64,8 +64,7 @@
       </Command>
     </PreBuildEvent>
     <PostBuildEvent>
-      <Command>copy $(TargetPath) "H:\Steam\steamapps\space326\garrysmod\garrysmod\lua\includes\modules"
-copy $(TargetPath) "D:\Server\GMOD\orangebox\garrysmod\lua\includes\modules"</Command>
+      <Command>copy $(TargetPath) "H:\Steam\steamapps\space326\garrysmod\garrysmod\lua\includes\modules"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
