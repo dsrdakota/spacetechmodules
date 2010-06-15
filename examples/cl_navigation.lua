@@ -6,8 +6,6 @@
 require("navigation")
 
 -- If running clientside hold down alt to see it.
--- It will also show you a generated path betweeen 2 random points
-
 
 -- 128 grid size
 local Nav = CreateNav(128)
