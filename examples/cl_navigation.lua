@@ -7,8 +7,8 @@ require("navigation")
 
 -- If running clientside hold down alt to see it.
 
--- 128 grid size
-local Nav = CreateNav(128)
+-- 32 grid size
+local Nav = CreateNav(32)
 
 -- The module will ignore COLLISION_GROUP_PLAYER
 
