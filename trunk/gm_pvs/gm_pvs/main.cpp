@@ -462,6 +462,20 @@ int Init(lua_State* L)
 
 int Shutdown(lua_State* L)
 {
+
+	if(EntityRef)
+	{
+		gLua->FreeReference(EntityRef);
+	}
+	if(EntIndexRef)
+	{
+		gLua->FreeReference(EntIndexRef);
+	}
+	if(HookCallRef)
+	{
+		gLua->FreeReference(HookCallRef);
+	}
+
 	if(sound)
 	{
 		Msg("gm_pvs: Unhooking Sound\n");

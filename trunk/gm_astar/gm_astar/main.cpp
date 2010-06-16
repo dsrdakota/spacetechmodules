@@ -632,5 +632,9 @@ int Init(lua_State* L)
 
 int Shutdown(lua_State* L)
 {
+	if(VectorMetaRef)
+	{
+		gLua->FreeReference(VectorMetaRef);
+	}
 	return 0;
 }

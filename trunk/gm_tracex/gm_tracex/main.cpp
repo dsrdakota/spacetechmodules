@@ -384,5 +384,20 @@ int Init(lua_State* L)
 
 int Shutdown(lua_State* L)
 {
+	if(EntityRef)
+	{
+		gLua->FreeReference(EntityRef);
+	}
+
+	if(VectorRef)
+	{
+		gLua->FreeReference(VectorRef);	
+	}
+	
+	if(GetWorldEntityRef)
+	{
+		gLua->FreeReference(GetWorldEntityRef);
+	}
+
 	return 0;
 }
