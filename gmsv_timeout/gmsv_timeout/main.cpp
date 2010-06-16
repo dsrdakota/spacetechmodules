@@ -14,6 +14,8 @@ GMOD_MODULE(Init, Shutdown);
 ILuaInterface *gLua	= NULL;
 IVEngineServer *engine = NULL;
 
+//TODO: Reference it up
+
 // Yay Jinto
 // http://www.facepunch.com/showpost.php?p=11830936&postcount=11
 int GetPlayerIndex(int arg)
