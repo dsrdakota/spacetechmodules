@@ -86,6 +86,7 @@ void PushNode(Node *node)
 LUA_FUNCTION(CreateNav)
 {
 	gLua->CheckType(1, GLua::TYPE_NUMBER);
+
 	PushNav(new Nav(util, Gfilesystem, (int)gLua->GetNumber(1)));
 	return 1;
 }
@@ -342,6 +343,63 @@ LUA_FUNCTION(Nav_Load)
 
 	return 1;
 }
+
+LUA_FUNCTION(Nav_GetDiagonal)
+{
+	gLua->CheckType(1, NAV_TYPE);
+
+	gLua->Push(GetNav(1)->GetDiagonal());
+
+	return 1;
+}
+
+LUA_FUNCTION(Nav_SetDiagonal)
+{
+	gLua->CheckType(1, NAV_TYPE);
+
+	GetNav(1)->SetDiagonal(gLua->GetBool(2));
+
+	return 0;
+}
+
+LUA_FUNCTION(Nav_GetGridSize)
+{
+	gLua->CheckType(1, NAV_TYPE);
+	
+	gLua->Push((float)GetNav(1)->GetGridSize());
+
+	return 1;
+}
+
+LUA_FUNCTION(Nav_SetGridSize)
+{
+	gLua->CheckType(1, NAV_TYPE);
+	gLua->CheckType(2, GLua::TYPE_NUMBER);
+
+	GetNav(1)->SetGridSize(gLua->GetInteger(2));
+
+	return 0;
+}
+
+LUA_FUNCTION(Nav_GetMask)
+{
+	gLua->CheckType(1, NAV_TYPE);
+	
+	gLua->Push((float)GetNav(1)->GetMask());
+
+	return 1;
+}
+
+LUA_FUNCTION(Nav_SetMask)
+{
+	gLua->CheckType(1, NAV_TYPE);
+	gLua->CheckType(2, GLua::TYPE_NUMBER);
+
+	GetNav(1)->SetMask(gLua->GetInteger(2));
+
+	return 0;
+}
+
 ///////////////////////////////////////////////
 
 LUA_FUNCTION(Node_GetPosition)
@@ -375,7 +433,7 @@ LUA_FUNCTION(Node_GetConnections)
 	
 	Node *Connection;
 
-	for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+	for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 	{
 		Connection = node->GetConnectedNode((NavDirType)Dir);
 		if(Connection != NULL)
@@ -402,7 +460,7 @@ LUA_FUNCTION(Node_IsConnected)
 	Node *Node2 = GetNode(2);
 
 	Node *Connection;
-	for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+	for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 	{
 		Connection = Node1->GetConnectedNode((NavDirType)Dir);
 		if(Connection != NULL && Connection == Node2)
@@ -514,23 +572,19 @@ int Init(lua_State* L)
 
 	util = new GMUtility(Genginetrace, gLua->IsServer());
 
-#ifdef DIAGONAL
-	gLua->SetGlobal("DIAGONAL", true);
-#endif
-
 	gLua->SetGlobal("NORTH", (float)NORTH);
 	gLua->SetGlobal("SOUTH", (float)SOUTH);
 	gLua->SetGlobal("EAST", (float)EAST);
 	gLua->SetGlobal("WEST", (float)WEST);
 
-#ifdef DIAGONAL
 	gLua->SetGlobal("NORTHEAST", (float)NORTHEAST);
 	gLua->SetGlobal("NORTHWEST", (float)NORTHWEST);
 	gLua->SetGlobal("SOUTHEAST", (float)SOUTHEAST);
 	gLua->SetGlobal("SOUTHWEST", (float)SOUTHWEST);
-#endif
 
 	gLua->SetGlobal("NUM_DIRECTIONS", (float)NUM_DIRECTIONS);
+	gLua->SetGlobal("NUM_DIRECTIONS_DIAGONAL", (float)NUM_DIRECTIONS_DIAGONAL);
+	gLua->SetGlobal("NUM_DIRECTIONS_MAX", (float)NUM_DIRECTIONS_MAX);
 
 	gLua->SetGlobal("HEURISTIC_MANHATTAN", (float)Nav::HEURISTIC_MANHATTAN);
 	gLua->SetGlobal("HEURISTIC_EUCLIDEAN", (float)Nav::HEURISTIC_EUCLIDEAN);
@@ -561,6 +615,12 @@ int Init(lua_State* L)
 			NavIndex->SetMember("GetClosestNode", Nav_GetClosestNode);
 			NavIndex->SetMember("Save", Nav_Save);
 			NavIndex->SetMember("Load", Nav_Load);
+			NavIndex->SetMember("GetDiagonal", Nav_GetDiagonal);
+			NavIndex->SetMember("SetDiagonal", Nav_SetDiagonal);
+			NavIndex->SetMember("GetGridSize", Nav_GetGridSize);
+			NavIndex->SetMember("SetGridSize", Nav_SetGridSize);
+			NavIndex->SetMember("GetMask", Nav_GetMask);
+			NavIndex->SetMember("SetMask", Nav_SetMask);
 
 		MetaNav->SetMember("__index", NavIndex);
 		NavIndex->UnReference();

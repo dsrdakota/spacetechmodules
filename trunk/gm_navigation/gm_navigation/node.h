@@ -44,14 +44,9 @@ private:
 	int ID;
 	Node *Parent;
 
-#ifdef DIAGONAL
-	int Visited[NUM_DIRECTIONS];
-#else
 	unsigned char Visited;
-#endif
+	Node *Connections[NUM_DIRECTIONS_MAX];
 
-	Node *Connections[NUM_DIRECTIONS];
-	
 	Node *AStarParent;
 	bool Opened;
 	bool Closed;
