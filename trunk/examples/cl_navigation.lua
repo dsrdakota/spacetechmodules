@@ -7,21 +7,32 @@ require("navigation")
 
 -- If running clientside hold down alt to see it.
 
--- 32 grid size
-local Nav = CreateNav(32)
+local GridSize = 32 -- Space between the nodes
+
+local Nav = CreateNav(GridSize)
+
+local Diagonal = true
+
+-- Diagonal Linking is disabled by default
+Nav:SetDiagonal(Diagonal) -- Enable / Disable Diagonal linking (Will DOUBLE the time it takes for the generation)
+
+-- Nav:SetGridSize(256) -- You can also set grid size this way (But its required to at least put some number in CreateNav
 
 -- The module will ignore COLLISION_GROUP_PLAYER
 
 local PrintPath = {}
 local Start, End
 local NormalUp = Vector(0, 0, 1)
+local Mask = MASK_PLAYERSOLID_BRUSHONLY
 local HitWorld, Pos, ONormal
+
+Nav:SetMask(Mask) -- Set the mask for the nav traces - Default is MASK_PLAYERSOLID_BRUSHONLY
 
 local function TraceDown(Pos)
 	local trace = {}
 	trace.start = Pos + Vector(0, 0, 1)
 	trace.endpos = trace.start - Vector(0, 0, 9000)
-	trace.mask = MASK_PLAYERSOLID_BRUSHONLY
+	trace.mask = Mask
 	local tr = util.TraceLine(trace)
 	return tr.HitWorld, tr.HitPos, tr.HitNormal
 end
@@ -34,7 +45,9 @@ local function ComputePath()
 	else
 		print("Failed to Find Path", table.Count(Path))
 		PrintTable(Path)
-		print(Path[1]:GetPosition(), Path[table.Count(Path)]:GetPosition())
+		if(table.Count(Path) > 0) then
+			print(Path[1]:GetPosition(), Path[table.Count(Path)]:GetPosition())
+		end
 	end
 	
 	PrintPath = Path
@@ -73,10 +86,25 @@ local function OnGenerated(Loaded)
 	
 	print("Start", Nav:GetStart():GetPosition(), "End", Nav:GetEnd():GetPosition())
 	
+	print("Diagonal 1", Nav:GetDiagonal())
+	
+	Nav:SetDiagonal(!Diagonal)
+	
+	print("Diagonal 2", Nav:GetDiagonal())
+	
+	Nav:SetDiagonal(Diagonal)
+
+	print("GridSize 1", Nav:GetGridSize())
+	
+	Nav:SetGridSize(256)
+	
+	print("GridSize 2", Nav:GetGridSize())
+	
+	Nav:SetGridSize(GridSize)
+	
 	-- HEURISTIC_MANHATTAN
 	-- HEURISTIC_EUCLIDEAN
 	-- HEURISTIC_CUSTOM (Not Implemented Yet)
-	
 	Nav:SetHeuristic(HEURISTIC_MANHATTAN)
 	
 	-- ComputePath()
@@ -165,11 +193,12 @@ if(SERVER) then
 end
 
 local Alpha = 200
-local ColNORMAL = Color(255, 255, 255, Alpha)
+local ColNORMAL = Color(255, 255, 255, Alpha) -- White
 local ColNORTH = Color(255, 255, 0, Alpha) -- Pink?
 local ColSOUTH = Color(255, 0, 0, Alpha) -- RED
 local ColEAST = Color(0, 255, 0, Alpha) -- GREEN
 local ColWEST = Color(0, 0, 255, Alpha) -- BLUE
+local ColOTHER = Color(0, 255, 255, Alpha) -- Black
 
 local PathOffset = Vector(0, 0, 10)
 local ColPath = Color(255, 0, 0, 255)
@@ -178,14 +207,17 @@ local function DrawNodeLines(Table, PlyPos)
 	for k,v in pairs(Table) do
 		if(PlyPos:Distance(v:GetPosition()) <= 512) then
 			for k2,v2 in pairs(v:GetConnections()) do
-				local Col = ColNORTH
-				if(k2 == SOUTH) then
+				local Col = ColOTHER
+				if(k2 == NORTH) then
+					Col = ColNORTH
+				elseif(k2 == SOUTH) then
 					Col = ColSOUTH
 				elseif(k2 == EAST) then
 					Col = ColEAST
 				elseif(k2 == WEST) then
 					Col = ColWEST
 				end
+				
 				render.DrawBeam(v:GetPosition(), v:GetPosition() + (v2:GetPosition() - v:GetPosition()) * 0.3, 4, 0.25, 0.75, Col)
 			end
 			render.DrawBeam(v:GetPosition(), v:GetPosition() + (v:GetNormal() * 13), 4, 0.25, 0.75, ColNORMAL)
