@@ -13,12 +13,17 @@ Nav::Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize)
 	FoundPath = false;
 	Heuristic = HEURISTIC_MANHATTAN;
 
+	Start = NULL;
+	End = NULL;
+
 	Generated = false;
 	Generating = false;
-
-	GenerationStepSize = GridSize;
 	GenerationMaxDistance = -1;
-	AddVector = Vector(0, 0, GridSize / 2);
+
+	Mask = MASK_PLAYERSOLID_BRUSHONLY;
+
+	SetDiagonal(false);
+	SetGridSize(GridSize);
 
 	// I don't believe this is required but I will leave this here for now.
 	// I wanted to make sure that enough memory is reserved but doesn't it dynamically expand
@@ -37,6 +42,12 @@ Nav::~Nav()
 	//Path.PurgeAndDeleteElements();
 	//Opened.PurgeAndDeleteElements();
    // Closed.PurgeAndDeleteElements();
+}
+
+void Nav::SetGridSize(int GridSize)
+{
+	GenerationStepSize = GridSize;
+	AddVector = Vector(0, 0, GridSize / 2);
 }
 
 Node *Nav::GetNode(const Vector &Pos)
@@ -90,6 +101,12 @@ Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node
 		node->SetID(Nodes.AddToTail(node));
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Adding Node <%f, %f>\n", Pos.x, Pos.y);
+#endif
+	}
+	else
+	{
+#ifdef FILEBUG
+		fs->FPrintf(fh, "Using Existing Node <%f, %f>\n", Pos.x, Pos.y);
 #endif
 	}
 
@@ -166,12 +183,18 @@ NavDirType Nav::OppositeDirection(NavDirType Dir)
 		case SOUTH: return NORTH;
 		case EAST:	return WEST;
 		case WEST:	return EAST;
-#ifdef DIAGONAL
-		case NORTHEAST: return SOUTHWEST;
-		case NORTHWEST: return SOUTHEAST;
-		case SOUTHEAST:	return NORTHWEST;
-		case SOUTHWEST: return NORTHEAST;
-#endif
+	}
+
+	// Maybe put this as the default case for the above switch?
+	if(DiagonalMode)
+	{
+		switch(Dir)
+		{
+			case NORTHEAST: return SOUTHWEST;
+			case NORTHWEST: return SOUTHEAST;
+			case SOUTHEAST:	return NORTHWEST;
+			case SOUTHWEST: return NORTHEAST;
+		}
 	}
 
 	return NORTH;
@@ -203,7 +226,7 @@ bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
 	{
 		from = pos + Vector( 0, 0, offset );
 
-		GMU->TraceLine( from, to, MASK_PLAYERSOLID_BRUSHONLY, &result);
+		GMU->TraceLine( from, to, Mask, &result);
 
 		// if the trace came down thru a door, ignore the door and try again
 		// also ignore breakable floors
@@ -287,14 +310,41 @@ void Nav::ClearWalkableSeeds()
 
 Node *Nav::GetNextWalkableSeedNode()
 {
-	if(!WalkableSeedList.IsValidIndex(SeedIndex))
+#ifdef FILEBUG
+	fs->FPrintf(fh, "GetNextWalkableSeedNode: %i\n", SeedIndex);
+#endif
+
+	if(SeedIndex == -1)
 	{
+#ifdef FILEBUG
+		fs->FPrintf(fh, "Invalid Seed Index 1\n");
+#endif
 		return NULL;
 	}
 
+	if(!WalkableSeedList.IsValidIndex(SeedIndex))
+	{
+#ifdef FILEBUG
+		fs->FPrintf(fh, "Invalid Seed Index 2\n");
+#endif
+		return NULL;
+	}
+
+#ifdef FILEBUG
+	fs->FPrintf(fh, "GetNextWalkableSeedNode: Continuing 1\n");
+#endif
+
 	WalkableSeedSpot Spot = WalkableSeedList.Element(SeedIndex);
 
+#ifdef FILEBUG
+	fs->FPrintf(fh, "GetNextWalkableSeedNode: Continuing 2\n");
+#endif
+
 	SeedIndex = WalkableSeedList.Next(SeedIndex);
+
+#ifdef FILEBUG
+	fs->FPrintf(fh, "GetNextWalkableSeedNode: Continuing 3\n");
+#endif
 
 	if(GetNode(Spot.Pos) == NULL)
 	{
@@ -356,7 +406,7 @@ bool Nav::SampleStep()
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Stepping From Node\n");
 #endif
-		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		for(int Dir = NORTH; Dir < NumDir; Dir++)
 		{
 #ifdef FILEBUG
 			fs->FPrintf(fh, "Checking Direction: %i\n", Dir);
@@ -364,6 +414,10 @@ bool Nav::SampleStep()
 			if(!CurrentNode->HasVisited((NavDirType)Dir))
 			{
 				// have not searched in this direction yet
+
+#ifdef FILEBUG
+				fs->FPrintf(fh, "Unsearched Direction: %i\n", Dir);
+#endif
 
 				// start at current node position
 				Vector Pos = *CurrentNode->GetPosition();
@@ -377,12 +431,10 @@ bool Nav::SampleStep()
 					case SOUTH:	Pos.y -= GenerationStepSize; break;
 					case EAST:	Pos.x += GenerationStepSize; break;
 					case WEST:	Pos.x -= GenerationStepSize; break;
-#ifdef DIAGONAL
 					case NORTHEAST:	Pos.x += GenerationStepSize; Pos.y += GenerationStepSize; break;
 					case NORTHWEST:	Pos.x -= GenerationStepSize; Pos.y += GenerationStepSize; break;
 					case SOUTHEAST: Pos.x += GenerationStepSize; Pos.y -= GenerationStepSize; break;
 					case SOUTHWEST:	Pos.x -= GenerationStepSize; Pos.y -= GenerationStepSize; break;
-#endif
 				}
 
 #ifdef FILEBUG
@@ -418,7 +470,7 @@ bool Nav::SampleStep()
 
 				trace_t result;
 
-				GMU->TraceLine(fromOrigin, toOrigin, MASK_PLAYERSOLID_BRUSHONLY, &result);
+				GMU->TraceLine(fromOrigin, toOrigin, Mask, &result);
 
 				bool walkable;
 
@@ -537,7 +589,7 @@ bool Nav::Save(const char *Filename)
 		buf.PutFloat(node->Normal.y);
 		buf.PutFloat(node->Normal.z);
 
-		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		for(int Dir = NORTH; Dir < NumDir; Dir++)
 		{
 			if(node->GetConnectedNode((NavDirType)Dir) != NULL)
 			{
@@ -554,7 +606,7 @@ bool Nav::Save(const char *Filename)
 	for(int i = 0; i < NodeTotal; i++)
 	{
 		node = Nodes[i];
-		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		for(int Dir = NORTH; Dir < NumDir; Dir++)
 		{
 			connection = node->GetConnectedNode((NavDirType)Dir);
 			if(connection != NULL)
@@ -750,7 +802,7 @@ CUtlVector<Node*>& Nav::FindPath()
 
 	FoundPath = false;
 
-	if(GetStart() == GetEnd())
+	if(GetStart() == NULL || GetEnd() == NULL || GetStart() == GetEnd())
 	{
 		return Path;
 	}
@@ -794,14 +846,23 @@ CUtlVector<Node*>& Nav::FindPath()
 				
 				if(ScoreH != NULL)
 				{
-					for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+					for(int Dir = NORTH; Dir < NumDir; Dir++)
 					{
+#ifdef FILEBUG
+						fs->FPrintf(fh, "Looking for Connection: %i\n", Dir);
+#endif
 						Connection = Current->GetConnectedNode((NavDirType)Dir);
 						if(Connection != NULL)
 						{
+#ifdef FILEBUG
+							fs->FPrintf(fh, "Connected Node Found: %i\n", Dir);
+#endif
 							if(!Connection->IsClosed())
 							{
 
+#ifdef FILEBUG
+								fs->FPrintf(fh, "Not Closed\n");
+#endif
 								// If it isn’t on the open list, add it to the open list. Make the current node the parent of this node. Record the F, G, and H costs of the node. 
 								if(!Connection->IsOpened())
 								{
@@ -847,6 +908,39 @@ CUtlVector<Node*>& Nav::CalcPath(Node *Current)
 bool Nav::HasFoundPath()
 {
 	return FoundPath;
+}
+
+int Nav::GetMask()
+{
+	return Mask;
+}
+
+void Nav::SetMask(int M)
+{
+	Mask = M;
+}
+
+bool Nav::GetDiagonal()
+{
+	return DiagonalMode;
+}
+
+void Nav::SetDiagonal(bool Diagonal)
+{
+	DiagonalMode = Diagonal;
+	if(DiagonalMode)
+	{
+		NumDir = NUM_DIRECTIONS_DIAGONAL;
+	}
+	else
+	{
+		NumDir = NUM_DIRECTIONS;
+	}
+}
+
+int Nav::GetNumDir()
+{
+	return NumDir;
 }
 
 int Nav::GetHeuristic()

@@ -11,6 +11,7 @@
 #include "iserverunknown.h"
 #include "iclientunknown.h"
 
+// Took a while to get this right
 class GMOD_TraceFilter : public CTraceFilter
 {
 public:

@@ -26,6 +26,7 @@ public:
 	Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize);
 	~Nav();
 	void RemoveAllNodes();
+	void SetGridSize(int GridSize);
 	Node *GetNode(const Vector &Pos);
 	Node *GetNodeByID(int ID);
 	Node *AddNode(const Vector &destPos, const Vector &normal, NavDirType dir, Node *source);
@@ -58,6 +59,11 @@ public:
 	void AddOpenedNode(Node *node);
 	void AddClosedNode(Node *node);
 	bool HasFoundPath();
+	bool GetDiagonal();
+	void SetDiagonal(bool Diagonal);
+	int GetMask();
+	void SetMask(int M);
+	int GetNumDir();
 	int GetHeuristic();
 	Node *GetStart();
 	Node *GetEnd();
@@ -77,6 +83,11 @@ private:
 
 	Vector StartPos;
 	Vector AddVector;
+
+	int NumDir;
+	bool DiagonalMode;
+
+	int Mask;
 	int GenerationStepSize;
 	
 	GMUtility *GMU;
@@ -87,6 +98,7 @@ private:
 #endif
 
 	NavDirType GenerationDir;
+
 	Node *CurrentNode;
 
 	Vector Origin;
@@ -99,6 +111,7 @@ private:
 
 	Node *Start;
 	Node *End;
+
 	int Heuristic;
 	int HeuristicRef;
 	bool FoundPath;

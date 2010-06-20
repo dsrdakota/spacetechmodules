@@ -12,19 +12,14 @@ Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 	Normal = Norm;
 	Parent = Par;
 
-	for(int i = NORTH; i < NUM_DIRECTIONS; i++)
+	// Not sure if theres any memory problems with this.
+	// If it's not diagonal your still setting 4 of them to NULL
+	for(int i = NORTH; i < NUM_DIRECTIONS_MAX; i++)
 	{
 		Connections[i] = NULL;
 	}
 
-#ifdef DIAGONAL
-	for(int i = NORTH; i < NUM_DIRECTIONS; i++)
-	{
-		Visited[i] = 0;
-	}
-#else
 	Visited = 0;
-#endif
 
 	Opened = false;
 	Closed = false;
@@ -64,24 +59,16 @@ Node *Node::GetParent()
 
 void Node::MarkAsVisited(NavDirType Dir)
 {
-#ifdef DIAGONAL
-	Visited[Dir] = 1;
-#else
 	Visited |= (1 << Dir);
-#endif
 }
 
 bool Node::HasVisited(NavDirType Dir)
 {
-#ifdef DIAGONAL
-	return Visited[Dir] == 1;
-#else
 	if(Visited & (1 << Dir))
 	{
 		return true;
 	}
 	return false;
-#endif
 }
 
 void Node::SetStatus(Node* P, float F, float G, float H)
