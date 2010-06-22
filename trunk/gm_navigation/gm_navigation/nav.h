@@ -30,6 +30,7 @@ public:
 	Node *GetNode(const Vector &Pos);
 	Node *GetNodeByID(int ID);
 	Node *AddNode(const Vector &destPos, const Vector &normal, NavDirType dir, Node *source);
+	void RemoveNode(Node *node);
 	int GetGridSize();
 	float SnapToGrid(float x);
 	Vector SnapToGrid(const Vector& in, bool snapX = true, bool snapY = true);
