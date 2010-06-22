@@ -133,3 +133,13 @@ void Node::SetID(int id)
 {
 	ID = id;
 }
+
+void Node::SetNormal(const Vector &Norm)
+{
+	Normal = Norm;
+}
+
+void Node::SetPosition(const Vector &Position)
+{
+	Pos = Position;
+}

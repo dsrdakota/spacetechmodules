@@ -126,7 +126,7 @@ concommand.Add("snav", function(ply)
 		
 		if(IsValid(ply)) then
 			-- Remove this line if you don't want a max distance
-			Nav:SetupMaxDistance(ply:GetPos(), 256) -- All nodes must stay within 1024 from the players position
+			Nav:SetupMaxDistance(ply:GetPos(), 256) -- All nodes must stay within 256 vector distance from the players position
 		end
 		
 		Nav:ClearWalkableSeeds()
@@ -186,6 +186,35 @@ concommand.Add("snav_debug_2", function()
 	for k,v in pairs(Nav:GetNodes()) do
 		print(v, v:GetPosition(), table.Count(v:GetConnections()))
 	end
+end)
+
+concommand.Add("snav_manual", function(ply)
+	local HitWorld, Pos, Normal = TraceDown((IsValid(ply) and ply:GetPos()) or Vector(0, 0, 1))
+	
+	if(!HitWorld) then
+		return
+	end
+	
+	local Node1 = Nav:CreateNode(Pos, Normal)
+	
+	if(!Node1) then
+		print("I went out of the max distance. I'm so sorry!!")
+		return
+	end
+	
+	print("GetPosition", Node1:GetPosition())
+	print("GetNormal", Node1:GetNormal())
+	
+	Node1:SetPosition(Vector(333, 444, 555))
+	Node1:SetNormal(Normal * -1)
+	
+	print("GetPosition", Node1:GetPosition())
+	print("GetNormal", Node1:GetNormal())
+	
+	Node1:SetPosition(Pos)
+	Node1:SetNormal(Normal)
+	
+	Node1:ConnectTo(table.Random(Nav:GetNodes()), NORTH)
 end)
 
 if(SERVER) then

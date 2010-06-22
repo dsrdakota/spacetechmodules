@@ -400,6 +400,17 @@ LUA_FUNCTION(Nav_SetMask)
 	return 0;
 }
 
+LUA_FUNCTION(Nav_CreateNode)
+{
+	gLua->CheckType(1, NAV_TYPE);
+	gLua->CheckType(2, GLua::TYPE_VECTOR);
+	gLua->CheckType(3, GLua::TYPE_VECTOR);
+
+	PushNode(GetNav(1)->AddNode(GMOD_GetVector(2), GMOD_GetVector(3), NORTH, NULL)); // This dir doesn't matter
+
+	return 1;
+}
+
 ///////////////////////////////////////////////
 
 LUA_FUNCTION(Node_GetPosition)
@@ -474,6 +485,47 @@ LUA_FUNCTION(Node_IsConnected)
 	gLua->Push(false);
 
 	return 1;
+}
+
+LUA_FUNCTION(Node_SetNormal)
+{
+	gLua->CheckType(1, NODE_TYPE);
+	gLua->CheckType(2, GLua::TYPE_VECTOR);
+
+	GetNode(1)->SetNormal(GMOD_GetVector(2));
+
+	return 0;
+}
+
+LUA_FUNCTION(Node_SetPosition)
+{
+	gLua->CheckType(1, NODE_TYPE);
+	gLua->CheckType(2, GLua::TYPE_VECTOR);
+
+	GetNode(1)->SetPosition(GMOD_GetVector(2));
+
+	return 0;
+}
+
+LUA_FUNCTION(Node_ConnectTo)
+{
+	gLua->CheckType(1, NODE_TYPE);
+	gLua->CheckType(2, NODE_TYPE);
+	gLua->CheckType(3, GLua::TYPE_NUMBER);
+
+	Node *Node1 = GetNode(1);
+	Node *Node2 = GetNode(2);
+	NavDirType Dir = (NavDirType)gLua->GetInteger(3);
+
+	Node1->ConnectTo(Node2, Dir);
+	Node2->ConnectTo(Node1, OppositeDirection(Dir));
+
+	Node1->MarkAsVisited(Dir);
+	Node1->MarkAsVisited(OppositeDirection(Dir));
+
+	Node2->MarkAsVisited(Dir);
+
+	return 0;
 }
 
 ///////////////////////////////////////////////
@@ -621,6 +673,7 @@ int Init(lua_State* L)
 			NavIndex->SetMember("SetGridSize", Nav_SetGridSize);
 			NavIndex->SetMember("GetMask", Nav_GetMask);
 			NavIndex->SetMember("SetMask", Nav_SetMask);
+			NavIndex->SetMember("CreateNode", Nav_CreateNode);
 
 		MetaNav->SetMember("__index", NavIndex);
 		NavIndex->UnReference();
@@ -632,6 +685,11 @@ int Init(lua_State* L)
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
 			NodeIndex->SetMember("IsConnected", Node_IsConnected);
+
+			NodeIndex->SetMember("SetNormal", Node_SetNormal);
+			NodeIndex->SetMember("SetPosition", Node_SetPosition);
+			NodeIndex->SetMember("ConnectTo", Node_ConnectTo);
+
 		MetaNode->SetMember("__index", NodeIndex);
 		NodeIndex->UnReference();
 	MetaNode->UnReference();

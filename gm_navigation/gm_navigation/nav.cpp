@@ -110,11 +110,20 @@ Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node
 #endif
 	}
 
-	// connect source node to new node
-	Source->ConnectTo(node, Dir);
+	if(Source != NULL)
+	{
+		// connect source node to new node
+		Source->ConnectTo(node, Dir);
 
-	node->ConnectTo(Source, OppositeDirection(Dir));
-	node->MarkAsVisited(OppositeDirection(Dir));
+		node->ConnectTo(Source, OppositeDirection(Dir));
+		node->MarkAsVisited(OppositeDirection(Dir));
+
+		if(UseNew)
+		{
+			// new node becomes current node
+			CurrentNode = node;
+		}
+	}
 
 	/* hmmmmm
 	// optimization: if deltaZ changes very little, assume connection is commutative
@@ -125,12 +134,6 @@ Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node
 		Node->MarkAsVisited(OppositeDirection(Dir));
 	}
 	*/
-
-	if(UseNew)
-	{
-		// new node becomes current node
-		CurrentNode = node;
-	}
 
 	return node;
 }
