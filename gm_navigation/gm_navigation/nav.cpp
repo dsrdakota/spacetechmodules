@@ -140,6 +140,21 @@ Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node
 	return node;
 }
 
+void Nav::RemoveNode(Node *node)
+{
+	Node *Connection;
+	for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
+	{
+		Connection = node->GetConnectedNode((NavDirType)Dir);
+		if(Connection != NULL)
+		{
+			Connection->ConnectTo(NULL, OppositeDirection((NavDirType)Dir));
+		}
+	}
+
+	Nodes.Remove(node->GetID());
+}
+
 int Nav::GetGridSize()
 {
 	return GenerationStepSize;

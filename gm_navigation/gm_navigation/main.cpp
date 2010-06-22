@@ -427,6 +427,16 @@ LUA_FUNCTION(Nav_CreateNode)
 	return 1;
 }
 
+LUA_FUNCTION(Nav_RemoveNode)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, NODE_TYPE);
+
+	GetNav(L, 1)->RemoveNode(GetNode(L, 2));
+
+	return 0;
+}
+
 ///////////////////////////////////////////////
 
 LUA_FUNCTION(Node_GetPosition)
@@ -681,6 +691,7 @@ int Init(lua_State* L)
 			NavIndex->SetMember("GetMask", Nav_GetMask);
 			NavIndex->SetMember("SetMask", Nav_SetMask);
 			NavIndex->SetMember("CreateNode", Nav_CreateNode);
+			NavIndex->SetMember("RemoveNode", Nav_RemoveNode);
 
 		MetaNav->SetMember("__index", NavIndex);
 		NavIndex->UnReference();

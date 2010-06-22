@@ -178,6 +178,11 @@ concommand.Add("snav_setend", function(ply)
 	ComputePath()
 end)
 
+concommand.Add("snav_removenode", function(ply)
+	local ClosestNode = Nav:GetClosestNode(ply:GetPos())
+	Nav:RemoveNode(ClosestNode)
+end)
+
 concommand.Add("snav_debug", function()
 	print(Nav:GetNodes(), table.Count(Nav:GetNodes()))
 end)
