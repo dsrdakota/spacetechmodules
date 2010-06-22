@@ -32,6 +32,8 @@ Nav::Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize)
 
 #ifdef FILEBUG
 	fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+
+	fs->FPrintf(fh, "Created Nav\n");
 #endif
 }
 
