@@ -39,6 +39,8 @@ public:
 	void SetID(int id);
 	void SetAStarParent(Node* P);
 	Node *GetAStarParent();
+	void SetNormal(const Vector &Norm);
+	void SetPosition(const Vector &Position);
 
 private:
 	int ID;
