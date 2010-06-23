@@ -439,6 +439,15 @@ LUA_FUNCTION(Nav_RemoveNode)
 
 ///////////////////////////////////////////////
 
+LUA_FUNCTION(Node_GetID)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+
+	Lua()->Push((float)GetNode(L, 1)->GetID());
+
+	return 1;
+}
+
 LUA_FUNCTION(Node_GetPosition)
 {
 	Lua()->CheckType(1, NODE_TYPE);
@@ -699,6 +708,8 @@ int Init(lua_State* L)
 
 	ILuaObject *MetaNode = Lua()->GetMetaTable(NODE_NAME, NODE_TYPE);
 		ILuaObject *NodeIndex = Lua()->GetNewTable();
+			NodeIndex->SetMember("GetID", Node_GetID);
+			
 			NodeIndex->SetMember("GetPosition", Node_GetPosition);
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
