@@ -10,16 +10,16 @@ GMOD_MODULE(Init, Shutdown);
 GMUtility *util = NULL;
 IVEngineServer *engine = NULL;
 IFileSystem *Gfilesystem = NULL;
-IEngineTrace *Genginetrace = NULL;
+IEngineTrace *Genginetrace[2] = {NULL, NULL};
 
-int VectorMetaRef = -1;
+int VectorMetaRef = NULL;
 
 ///////////////////////////////////////////////
 // @Jinto (Referenced by Spacetech)
 
 ILuaObject* NewVectorObject(lua_State* L, Vector& vec)
 {
-	if(VectorMetaRef == -1)
+	if(VectorMetaRef == NULL)
 	{
 		// @azuisleet Get a reference to the function to survive past 510 calls!
 		ILuaObject *VectorMeta = Lua()->GetGlobal("Vector");
@@ -439,6 +439,16 @@ LUA_FUNCTION(Nav_RemoveNode)
 
 ///////////////////////////////////////////////
 
+LUA_FUNCTION(Node__eq)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+	Lua()->CheckType(2, NODE_TYPE);
+
+	Lua()->Push((bool)(GetNode(L, 1)->GetID() == GetNode(L, 2)->GetID()));
+
+	return 1;
+}
+
 LUA_FUNCTION(Node_GetID)
 {
 	Lua()->CheckType(1, NODE_TYPE);
@@ -609,25 +619,26 @@ int Init(lua_State* L)
 	engine = (IVEngineServer*)interfaceFactory(INTERFACEVERSION_VENGINESERVER, NULL);
 	if(!engine)
 	{
-		Lua()->Error("gm_nav: Missing IVEngineServer interface.\n");
+		Lua()->Error("gm_navigation: Missing IVEngineServer interface.\n");
 	}
 
-	if(Lua()->IsServer())
+	if(Lua()->IsClient())
 	{
-		Genginetrace = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_SERVER, NULL);
+		Genginetrace[1] = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_CLIENT, NULL);
 	}
 	else
 	{
-		Genginetrace = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_CLIENT, NULL);
+		Genginetrace[0] = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_SERVER, NULL);
 	}
 	
-	if(!Genginetrace)
+	if(!Genginetrace[(int)Lua()->IsClient()])
 	{
 		Lua()->Error("gm_navigation: Missing IEngineTrace interface.\n");
 	}
 
 	CreateInterfaceFn fsFactory;
 
+	// This check probably isn't needed
 	if(Lua()->IsDedicatedServer())
 	{
 		fsFactory = GetFactories(L).fileSystemFactory;
@@ -648,7 +659,7 @@ int Init(lua_State* L)
 		Lua()->Error("gm_navigation: Missing IFileSystem interface.\n");
 	}
 
-	util = new GMUtility(Genginetrace, Lua()->IsServer());
+	util = new GMUtility(Genginetrace[(int)Lua()->IsClient()], Lua()->IsServer());
 
 	Lua()->SetGlobal("NORTH", (float)NORTH);
 	Lua()->SetGlobal("SOUTH", (float)SOUTH);
@@ -720,6 +731,8 @@ int Init(lua_State* L)
 			NodeIndex->SetMember("ConnectTo", Node_ConnectTo);
 
 		MetaNode->SetMember("__index", NodeIndex);
+		MetaNode->SetMember("__eq", Node__eq);
+
 		NodeIndex->UnReference();
 	MetaNode->UnReference();
 
@@ -733,6 +746,7 @@ int Shutdown(lua_State* L)
 	if(VectorMetaRef)
 	{
 		Lua()->FreeReference(VectorMetaRef);
+		VectorMetaRef = NULL;
 	}
 	return 0;
 }
