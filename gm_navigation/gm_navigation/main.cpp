@@ -573,6 +573,28 @@ LUA_FUNCTION(Node_ConnectTo)
 	return 0;
 }
 
+LUA_FUNCTION(Node_RemoveConnection)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_NUMBER);
+
+	Node *Node1 = GetNode(L, 1);
+	NavDirType Dir = (NavDirType)Lua()->GetInteger(2);
+
+	Node *Node2 = Node1->GetConnectedNode(Dir);
+	if(Node2 != NULL)
+	{
+		Node1->ConnectTo(NULL, Dir);
+		Node2->ConnectTo(NULL, OppositeDirection(Dir));
+
+		// UnMarkAsVisited?
+		// I don't really know bitwise too well
+	}
+
+	return 0;
+}
+
+
 ///////////////////////////////////////////////
 // @haza55
 
@@ -729,6 +751,7 @@ int Init(lua_State* L)
 			NodeIndex->SetMember("SetNormal", Node_SetNormal);
 			NodeIndex->SetMember("SetPosition", Node_SetPosition);
 			NodeIndex->SetMember("ConnectTo", Node_ConnectTo);
+			NodeIndex->SetMember("RemoveConnection", Node_RemoveConnection);
 
 		MetaNode->SetMember("__index", NodeIndex);
 		MetaNode->SetMember("__eq", Node__eq);
