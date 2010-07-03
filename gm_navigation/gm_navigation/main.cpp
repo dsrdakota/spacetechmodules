@@ -453,7 +453,7 @@ LUA_FUNCTION(Node_GetID)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	Lua()->Push((float)GetNode(L, 1)->GetID());
+	Lua()->Push((float)GetNode(L, 1)->GetID() + 1);
 
 	return 1;
 }

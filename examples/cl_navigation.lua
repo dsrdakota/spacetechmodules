@@ -71,6 +71,8 @@ local function OnGenerated(Loaded)
 	
 	print("GetNode", Nav:GetNode(Node:GetPosition()):GetPosition(), Node:GetPosition())
 	
+	print("GetNodeByID", Nav:GetNodeByID(1), Nav:GetNodeByID(Nav:GetNodeByID(1):GetID()), Nav:GetNodeByID(1) == Nav:GetNodeByID(Nav:GetNodeByID(1):GetID())) 
+	
 	print("GetClosestNode", Nav:GetClosestNode(Vector(0, 0, 0)))
 	
 	print("Node Info", Nav:GetNodes(), Nav:GetNodeTotal(), table.Count(Nav:GetNodes()))
@@ -185,6 +187,21 @@ end)
 
 concommand.Add("snav_debug", function()
 	print(Nav:GetNodes(), table.Count(Nav:GetNodes()))
+	
+	-- local NodeA = Nav:GetNodeByID(1)
+	
+	-- local DIR = NORTH
+	-- for k,NodeB in ipairs(Nav:GetNodes()) do
+		-- if(NodeA != NodeB) then
+			-- NodeA:ConnectTo(NodeB, DIR)
+			-- DIR = DIR + 1
+		-- end
+		-- if(DIR == NUM_DIRECTIONS_DIAGONAL) then
+			-- break
+		-- end
+	-- end
+	
+	-- PrintTable(NodeA:GetConnections())
 end)
 
 concommand.Add("snav_debug_2", function()
