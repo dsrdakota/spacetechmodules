@@ -223,7 +223,7 @@ void VFUNC newCheckTransmit(IServerGameEnts *ge, CCheckTransmitInfo *pInfo, cons
 {
 	if(!pBaseEdict || pBaseEdict->IsFree())
 	{
-		gLua->Error("gm_pvs: The world is missing!\n");
+		return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
 	}
 
 	CBaseEntity *pRecipientEntity = CBaseEntity::Instance(pInfo->m_pClientEnt);
@@ -237,6 +237,7 @@ void VFUNC newCheckTransmit(IServerGameEnts *ge, CCheckTransmitInfo *pInfo, cons
 		return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
 	}
 
+	/*
 	int nNewEdicts = 0;
 	int ClientIndex = engine->IndexOfEdict(pInfo->m_pClientEnt);
 
@@ -307,23 +308,26 @@ void VFUNC newCheckTransmit(IServerGameEnts *ge, CCheckTransmitInfo *pInfo, cons
 					nNewEdicts = nNewEdicts + 1;
 				}
 
-				/*
-				if(AlwaysInstance || LUACheckTransmit(PlayerIndex, EntIndex))
-				{
-					pInfo->m_pTransmitEdict->Set(iEdict);
-				}
-				else if (pInfo->m_pTransmitEdict->Get(iEdict))
-				{
-					pInfo->m_pTransmitEdict->Clear(iEdict);
-				}*/
+				
+				//if(AlwaysInstance || LUACheckTransmit(PlayerIndex, EntIndex))
+				//{
+				//	pInfo->m_pTransmitEdict->Set(iEdict);
+				//}
+				//else if (pInfo->m_pTransmitEdict->Get(iEdict))
+				//{
+				//	pInfo->m_pTransmitEdict->Clear(iEdict);
+				//}
 
 			}
 		}
 	}
 
 	UpdatePlayerEdictIndices(ClientIndex, pNewEdictIndices, nNewEdicts);
+	*/
 
-	return origCheckTransmit(ge, pInfo, pNewEdictIndices, nNewEdicts);
+	return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
+
+	//return origCheckTransmit(ge, pInfo, pNewEdictIndices, nNewEdicts);
 }
 
 ////////////////////////////////////////
@@ -394,6 +398,16 @@ void VFUNC newEmitSound2(IEngineSound *es, IRecipientFilter& filter, int iEntInd
 int Init(lua_State* L)
 {
 	gLua = Lua();
+
+	if(gLua->IsClient())
+	{
+		gLua->Error("gm_pvs: Don't run this clientside\n");
+	}
+
+	if(!gLua->IsDedicatedServer())
+	{
+		gLua->Error("gm_pvs: You must run this on a dedicated server\n");
+	}
 
 	CreateInterfaceFn interfaceFactory = Sys_GetFactory("engine.dll");
 	CreateInterfaceFn gameServerFactory = Sys_GetFactory("server.dll");
