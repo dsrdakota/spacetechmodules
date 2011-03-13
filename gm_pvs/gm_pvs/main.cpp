@@ -221,23 +221,23 @@ void UpdatePlayerEdictIndices(int ClientIndex, unsigned short *pEdictIndices, in
 DEFVFUNC_(origCheckTransmit, void, (IServerGameEnts *ge, CCheckTransmitInfo *pInfo, const unsigned short *pEdictIndices, int nEdicts));
 void VFUNC newCheckTransmit(IServerGameEnts *ge, CCheckTransmitInfo *pInfo, const unsigned short *pEdictIndices, int nEdicts)
 {
+	
+	Msg("wtf\n");
+	return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
+
 	if(!pBaseEdict || pBaseEdict->IsFree())
 	{
+		Msg("test1\n");
 		return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
 	}
 
 	CBaseEntity *pRecipientEntity = CBaseEntity::Instance(pInfo->m_pClientEnt);
-	if(!pRecipientEntity)
+	if(!pRecipientEntity || !pRecipientEntity->IsPlayer() || pRecipientEntity->GetElasticity() != PVS_CONNECTED)
 	{
-		return;
-	}
-
-	if(pRecipientEntity->IsPlayer() && pRecipientEntity->GetElasticity() != PVS_CONNECTED)
-	{
+		Msg("test2\n");
 		return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
 	}
-
-	/*
+	
 	int nNewEdicts = 0;
 	int ClientIndex = engine->IndexOfEdict(pInfo->m_pClientEnt);
 
@@ -300,15 +300,16 @@ void VFUNC newCheckTransmit(IServerGameEnts *ge, CCheckTransmitInfo *pInfo, cons
 					|| NamesMatch("func_*", ClassName)
 					|| NamesMatch("env_*", ClassName)
 					|| NamesMatch("spotlight_*", ClassName));
+				
+				printf("%i | %i\n", ClientIndex, EntIndex);
 
-				if(AlwaysInstance || LUACheckTransmit(ClientIndex, EntIndex) || (pEntity->IsPlayer() && pEntity->GetElasticity() != PVS_CONNECTED))
+				if(AlwaysInstance || (pEntity->IsPlayer() && pEntity->GetElasticity() != PVS_CONNECTED) || LUACheckTransmit(ClientIndex, EntIndex))
 				{
-					//Msg("Manually Set %i:%i\n", nNewEdicts, iEdict);
+					Msg("Manually Set %i:%i\n", nNewEdicts, iEdict);
 					pNewEdictIndices[nNewEdicts] = iEdict;
 					nNewEdicts = nNewEdicts + 1;
 				}
 
-				
 				//if(AlwaysInstance || LUACheckTransmit(PlayerIndex, EntIndex))
 				//{
 				//	pInfo->m_pTransmitEdict->Set(iEdict);
@@ -322,12 +323,13 @@ void VFUNC newCheckTransmit(IServerGameEnts *ge, CCheckTransmitInfo *pInfo, cons
 		}
 	}
 
+	Msg("woo\n");
+
 	UpdatePlayerEdictIndices(ClientIndex, pNewEdictIndices, nNewEdicts);
-	*/
 
-	return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
+	//return origCheckTransmit(ge, pInfo, pEdictIndices, nEdicts);
 
-	//return origCheckTransmit(ge, pInfo, pNewEdictIndices, nNewEdicts);
+	return origCheckTransmit(ge, pInfo, pNewEdictIndices, nNewEdicts);
 }
 
 ////////////////////////////////////////
@@ -462,12 +464,12 @@ int Init(lua_State* L)
 	}
     PlayerMeta->UnReference();
 
-	HOOKVFUNC(sound, 4, origEmitSound1, newEmitSound1);
+	//HOOKVFUNC(sound, 4, origEmitSound1, newEmitSound1);
 
 	//Wasn't called in my tests
 	//HOOKVFUNC(sound, 5, origEmitSound2, newEmitSound2);
 
-	HOOKVFUNC(gameents, 6, origCheckTransmit, newCheckTransmit);
+	HOOKVFUNC(gameents, 4, origCheckTransmit, newCheckTransmit);
 
 	Msg("gm_pvs: Programmed by Spacetech | Entity: %i | hook.Call: %i | EntIndex: %i\n", EntityRef, HookCallRef, EntIndexRef);
 
@@ -481,10 +483,12 @@ int Shutdown(lua_State* L)
 	{
 		gLua->FreeReference(EntityRef);
 	}
+
 	if(EntIndexRef)
 	{
 		gLua->FreeReference(EntIndexRef);
 	}
+
 	if(HookCallRef)
 	{
 		gLua->FreeReference(HookCallRef);
@@ -493,13 +497,15 @@ int Shutdown(lua_State* L)
 	if(sound)
 	{
 		Msg("gm_pvs: Unhooking Sound\n");
-		UNHOOKVFUNC(sound, 4, origEmitSound1);
+		//UNHOOKVFUNC(sound, 4, origEmitSound1);
 		//UNHOOKVFUNC(sound, 5, origEmitSound2);
 	}
+
 	if(gameents)
 	{
 		Msg("gm_pvs: Unhooking PVS\n");
-		UNHOOKVFUNC(gameents, 6, origCheckTransmit);
+		UNHOOKVFUNC(gameents, 4, origCheckTransmit);
 	}
+
 	return 0;
 }
