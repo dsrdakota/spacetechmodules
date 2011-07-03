@@ -10,7 +10,7 @@
 
 #include "sigscan.h"
 
-#include "gmodinterface/gmluamodule.h"
+#include "gmluamodule.h"
 
 #define ASTAR_NAME "AStar"
 #define ASTAR_TYPE 2626

@@ -8,7 +8,7 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8033DC79-C770-4DE4-83BA-4FD670182CCF}</ProjectGuid>
-    <RootNamespace>gm_nav</RootNamespace>
+    <RootNamespace>gm_pvs</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -29,15 +29,14 @@
     <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(Configuration)\</IntDir>
     <IgnoreImportLibrary Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</IgnoreImportLibrary>
     <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">false</LinkIncremental>
-    <IncludePath Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IncludePath)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <Optimization>MinSpace</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>C:\Programming\hl2sdk-ob-valve;C:\Programming\hl2sdk-ob-valve/common;C:\Programming\hl2sdk-ob-valve/common/xbox;C:\Programming\hl2sdk-ob-valve/public;C:\Programming\hl2sdk-ob-valve/public/tier0;C:\Programming\hl2sdk-ob-valve/public/tier1;C:\Programming\hl2sdk-ob-valve/src/public/tier2;C:\Programming\hl2sdk-ob-valve/public/tier3;C:\Programming\hl2sdk-ob-valve/game/client;C:\Programming\hl2sdk-ob-valve/game/shared;C:\Programming\hl2sdk-ob-valve/game/server;C:\Programming\hl2sdk-ob-valve/src/utils/common;C:\Programming\hl2sdk-ob-valve/src/dlls;C:\Programming\hl2sdk-ob-valve/src/dlls/hl2_dll;C:\Programming\hl2sdk-ob-valve/src/episodic;C:\Programming\hl2sdk-ob-valve/src/gmodinterface;F:\Downloads\Azuisleet Modules\secretheaders;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>C:/Programming/Garrysmod/src;C:/Programming/Garrysmod/src/common;C:/Programming/Garrysmod/src/common/xbox;C:/Programming/Garrysmod/src/public;C:/Programming/Garrysmod/src/public/tier0;C:/Programming/Garrysmod/src/public/tier1;C:/Programming/Garrysmod/src/public/tier2;C:/Programming/Garrysmod/src/public/tier3;C:/Programming/Garrysmod/src/game/client;C:/Programming/Garrysmod/src/game/shared;C:/Programming/Garrysmod/src/game/server;C:/Programming/Garrysmod/src/utils/common;C:/Programming/Garrysmod/src/dlls;C:/Programming/Garrysmod/src/dlls/hl2_dll;C:/Programming/Garrysmod/src/episodic;C:/Programming/Garrysmod/src/gmodinterface;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -51,7 +50,8 @@
     </ProjectReference>
     <Link>
       <AdditionalDependencies>mathlib.lib;tier0.lib;tier1.lib;tier2.lib;tier3.lib;vstdlib.lib;raytrace.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\Programming\hl2sdk-ob-valve\lib\public;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>C:\Programming\Garrysmod\src\lib\public;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -59,17 +59,22 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
-    <PostBuildEvent>
+    <PreBuildEvent>
       <Command>
       </Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>copy $(TargetPath) "H:\Steam\steamapps\space326\garrysmod\garrysmod\lua\includes\modules"
+copy $(TargetPath) "D:\Server\GMOD\orangebox\garrysmod\lua\includes\modules"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="nav.cpp" />
-    <ClCompile Include="node.cpp" />
-    <ClCompile Include="gmutility.cpp" />
-    <ClCompile Include="sigscan.cpp" />
+    <ClCompile Include="mrecpfilter.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="mrecpfilter.h" />
+    <ClInclude Include="vfnhook.h" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -77,14 +82,6 @@
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="main.h" />
-    <ClInclude Include="nav.h" />
-    <ClInclude Include="node.h" />
-    <ClInclude Include="gmutility.h" />
-    <ClInclude Include="sigscan.h" />
-    <ClInclude Include="defines.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
