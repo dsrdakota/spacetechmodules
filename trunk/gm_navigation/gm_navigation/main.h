@@ -9,7 +9,7 @@
 #include "engine/ienginetrace.h"
 #include "tier0/memdbgon.h"
 
-#include "gmodinterface/gmluamodule.h"
+#include "gmluamodule.h"
 
 #include "sigscan.h"
 
