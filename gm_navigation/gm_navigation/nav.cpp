@@ -153,6 +153,12 @@ void Nav::RemoveNode(Node *node)
 	}
 
 	Nodes.Remove(node->GetID());
+
+	// Update all node ids, removing a element from a utlvector will shift all the elements positions
+	for(int i = 0; i < Nodes.Count(); i++)
+	{
+		Nodes[i]->SetID(i);
+	}
 }
 
 int Nav::GetGridSize()
