@@ -60,7 +60,12 @@ Vector& GMOD_GetVector(lua_State* L, int stackPos)
 
 Nav* GetNav(lua_State* L, int Pos)
 {
-	return (Nav*)Lua()->GetUserData(Pos);
+	Nav* nav = (Nav*)Lua()->GetUserData(Pos);
+	if(nav == NULL)
+	{
+		Lua()->Error("Invalid Nav");
+	}
+	return nav;
 }
 
 Node* GetNode(lua_State* L, int Pos)
