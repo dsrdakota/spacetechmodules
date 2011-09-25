@@ -32,7 +32,7 @@ ILuaObject* NewVectorObject(lua_State* L, Vector& vec)
 	
 	if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
 	{
-		Msg("gm_navigation error: Not a function: %i\n", Lua()->GetType(-1));
+		//Msg("gm_navigation error: Not a function: %i\n", Lua()->GetType(-1));
 		Lua()->Push(Lua()->GetGlobal("Vector"));
 	}
 
