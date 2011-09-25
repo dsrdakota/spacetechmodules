@@ -883,7 +883,7 @@ CUtlVector<Node*>& Nav::FindPath()
 #ifdef FILEBUG
 							fs->FPrintf(fh, "Connected Node Found: %i\n", Dir);
 #endif
-							if(!Connection->IsClosed())
+							if(!Connection->IsClosed() && !Connection->IsDisabled())
 							{
 
 #ifdef FILEBUG
