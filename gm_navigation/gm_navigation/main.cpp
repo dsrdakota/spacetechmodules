@@ -481,6 +481,26 @@ LUA_FUNCTION(Node_GetNormal)
 	return 1;
 }
 
+LUA_FUNCTION(Node_IsDisabled)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+
+	Lua()->Push(GetNode(L, 1)->IsDisabled());
+
+	return 1;
+}
+
+LUA_FUNCTION(Node_SetDisabled)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_BOOL);
+
+	GetNode(L, 1)->SetDisabled(Lua()->GetBool(2));
+
+	return 0;
+
+}
+
 LUA_FUNCTION(Node_GetConnections)
 {
 	Lua()->CheckType(1, NODE_TYPE);
@@ -752,6 +772,9 @@ int Init(lua_State* L)
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
 			NodeIndex->SetMember("IsConnected", Node_IsConnected);
+
+			NodeIndex->SetMember("IsDisabled", Node_IsDisabled);
+			NodeIndex->SetMember("SetDisabled", Node_SetDisabled);
 
 			NodeIndex->SetMember("SetNormal", Node_SetNormal);
 			NodeIndex->SetMember("SetPosition", Node_SetPosition);

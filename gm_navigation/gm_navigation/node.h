@@ -25,11 +25,13 @@ public:
 	const Vector *GetNormal();
 	void MarkAsVisited(NavDirType Dir);
 	bool HasVisited(NavDirType Dir);
-
+	
 	// Stuff for AStar
 	void SetStatus(Node* P, float F, float G, float H);
 	bool IsOpened();
 	void SetOpened(bool Open);
+	bool IsDisabled();
+	void SetDisabled(bool Disabled);
 	bool IsClosed();
 	void SetClosed(bool Close);
 	float GetScoreH();
@@ -52,6 +54,7 @@ private:
 	Node *AStarParent;
 	bool Opened;
 	bool Closed;
+	bool Disabled;
 	float ScoreF;
 	float ScoreG;
 	float ScoreH;

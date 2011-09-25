@@ -180,13 +180,20 @@ concommand.Add("snav_setend", function(ply)
 	ComputePath()
 end)
 
-concommand.Add("snav_removenode", function(ply)
+concommand.Add("snav_disable_node", function(ply)
+	Nav:GetClosestNode(ply:GetPos()):SetDisabled(true)
+end)
+
+concommand.Add("snav_remove_node", function(ply)
 	local ClosestNode = Nav:GetClosestNode(ply:GetPos())
 	Nav:RemoveNode(ClosestNode)
 end)
 
-concommand.Add("snav_debug", function()
+concommand.Add("snav_debug", function(ply)
 	print(Nav:GetNodes(), table.Count(Nav:GetNodes()))
+	
+	-- local ClosestNode = Nav:GetClosestNode(ply:GetPos())
+	-- ClosestNode:RemoveConnection(NORTH)
 	
 	-- local NodeA = Nav:GetNodeByID(1)
 	
@@ -250,6 +257,7 @@ local ColSOUTH = Color(255, 0, 0, Alpha) -- RED
 local ColEAST = Color(0, 255, 0, Alpha) -- GREEN
 local ColWEST = Color(0, 0, 255, Alpha) -- BLUE
 local ColOTHER = Color(0, 255, 255, Alpha) -- Black
+local ColDisabled = Color(50, 50, 50, Alpha)
 
 local PathOffset = Vector(0, 0, 10)
 local ColPath = Color(255, 0, 0, 255)
@@ -271,7 +279,12 @@ local function DrawNodeLines(Table, PlyPos)
 				
 				render.DrawBeam(v:GetPosition(), v:GetPosition() + (v2:GetPosition() - v:GetPosition()) * 0.3, 4, 0.25, 0.75, Col)
 			end
-			render.DrawBeam(v:GetPosition(), v:GetPosition() + (v:GetNormal() * 13), 4, 0.25, 0.75, ColNORMAL)
+			
+			local ColNorm = ColNORMAL
+			if(v:IsDisabled()) then
+				ColNorm = ColDisabled
+			end
+			render.DrawBeam(v:GetPosition(), v:GetPosition() + (v:GetNormal() * 13), 4, 0.25, 0.75, ColNorm)
 		end
 	end
 end

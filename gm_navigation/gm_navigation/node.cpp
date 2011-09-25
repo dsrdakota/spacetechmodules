@@ -23,6 +23,7 @@ Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 
 	Opened = false;
 	Closed = false;
+	Disabled = false;
 	AStarParent = NULL;
 }
 
@@ -87,6 +88,16 @@ bool Node::IsOpened()
 void Node::SetOpened(bool Open)
 {
 	Opened = Open;
+}
+
+bool Node::IsDisabled()
+{
+	return Disabled;
+}
+
+void Node::SetDisabled(bool Disabled)
+{
+	this->Disabled = Disabled;
 }
 
 bool Node::IsClosed()
