@@ -1,7 +1,7 @@
--------------------
+---------------
 -- gm_navigation
 -- Spacetech
--------------------
+---------------
 
 require("navigation")
 
@@ -9,7 +9,7 @@ require("navigation")
 
 local GridSize = 32 -- Space between the nodes
 
-local Nav = CreateNav(GridSize)
+local Nav = nav.Create(GridSize)
 
 local Diagonal = true
 
@@ -23,10 +23,13 @@ Nav:SetDiagonal(Diagonal) -- Enable / Disable Diagonal linking (Will DOUBLE the 
 local PrintPath = {}
 local Start, End
 local NormalUp = Vector(0, 0, 1)
-local Mask = MASK_PLAYERSOLID_BRUSHONLY
+local Mask = MASK_PLAYERSOLID
 local HitWorld, Pos, ONormal
 
 Nav:SetMask(Mask) -- Set the mask for the nav traces - Default is MASK_PLAYERSOLID_BRUSHONLY
+
+local mins = Vector(-16, -16, 20) -- min z should be > 0 so that it doesn't get stuck in ground / screw up on angles
+local maxs = Vector(16, 16, 72)
 
 local function TraceDown(Pos)
 	local trace = {}
@@ -38,21 +41,43 @@ local function TraceDown(Pos)
 end
 
 local function ComputePath()
-	local FoundPath, Path = Nav:FindPath()
-	if(FoundPath) then
-		print("Found Path!", Path, table.Count(Path))
-		PrintTable(Path)
-	else
-		print("Failed to Find Path", table.Count(Path))
-		PrintTable(Path)
-		if(table.Count(Path) > 0) then
-			print(Path[1]:GetPosition(), Path[table.Count(Path)]:GetPosition())
+	ErrorNoHalt("ComputePath\n")
+	local StartTime = os.time()
+	Nav:FindPath(function(Nav, FoundPath, Path)
+		if(FoundPath) then
+			ErrorNoHalt("Found Path in "..string.ToMinutesSeconds(os.time() - StartTime).." Path Size: "..table.Count(Path).."\n")
+			-- PrintTable(Path)
+		else
+			ErrorNoHalt("Failed to Find Path "..table.Count(Path).."\n")
+			PrintTable(Path)
+			if(table.Count(Path) > 0) then
+				print(Path[1]:GetPosition(), Path[table.Count(Path)]:GetPosition())
+			end
 		end
-	end
-	
-	PrintPath = Path
-	Start = Nav:GetStart()
-	End = Nav:GetEnd()
+		PrintPath = Path
+		Start = Nav:GetStart()
+		End = Nav:GetEnd()
+	end)
+end
+
+local function ComputePathHull()
+	ErrorNoHalt("ComputePathHull\n")
+	local StartTime = os.time()
+	Nav:FindPathHull(mins, maxs, function(Nav, FoundPath, Path)
+		if(FoundPath) then
+			ErrorNoHalt("Found Path in "..string.ToMinutesSeconds(os.time() - StartTime).." Path Size: "..table.Count(Path).."\n")
+			-- PrintTable(Path)
+		else
+			ErrorNoHalt("Failed to Find Path "..table.Count(Path).."\n")
+			PrintTable(Path)
+			if(table.Count(Path) > 0) then
+				print(Path[1]:GetPosition(), Path[table.Count(Path)]:GetPosition())
+			end
+		end
+		PrintPath = Path
+		Start = Nav:GetStart()
+		End = Nav:GetEnd()
+	end)
 end
 
 local function OnGenerated(Loaded)
@@ -106,8 +131,7 @@ local function OnGenerated(Loaded)
 	
 	-- HEURISTIC_MANHATTAN
 	-- HEURISTIC_EUCLIDEAN
-	-- HEURISTIC_CUSTOM (Not Implemented Yet)
-	Nav:SetHeuristic(HEURISTIC_MANHATTAN)
+	Nav:SetHeuristic(nav.HEURISTIC_MANHATTAN)
 	
 	-- ComputePath()
 	
@@ -120,7 +144,7 @@ local function OnGenerated(Loaded)
 end
 
 -- Make sure you are nocliped and above the ground (Not sure if I need to do this anymore?)
-concommand.Add("snav", function(ply)
+concommand.Add("snav_generate", function(ply)
 	HitWorld, Pos, Normal = TraceDown((IsValid(ply) and ply:GetPos()) or Vector(0, 0, 1))
 	
 	if(HitWorld) then
@@ -128,7 +152,7 @@ concommand.Add("snav", function(ply)
 		
 		if(IsValid(ply)) then
 			-- Remove this line if you don't want a max distance
-			Nav:SetupMaxDistance(ply:GetPos(), 256) -- All nodes must stay within 256 vector distance from the players position
+			Nav:SetupMaxDistance(ply:GetPos(), 1024) -- All nodes must stay within 256 vector distance from the players position
 		end
 		
 		Nav:ClearWalkableSeeds()
@@ -144,28 +168,13 @@ concommand.Add("snav", function(ply)
 		Nav:AddWalkableSeed(Pos, NormalUp)
 		Nav:AddWalkableSeed(Pos, NormalUp)
 		
-		-- Nav:AddWalkableSeed(Pos - Vector(50, 200, 0), NormalUp)
-		-- Nav:AddWalkableSeed(Pos + Vector(0, 100, 0), NormalUp)
+		local StartTime = os.time()
 		
-		-- You must call this
-		-- Reset all generation variables so you can generate
-		Nav:StartGeneration()
+		Nav:Generate(function(Nav)
+			ErrorNoHalt("Generated "..Nav:GetNodeTotal().." nodes in "..string.ToMinutesSeconds(os.time() - StartTime).."\n")
+		end)
 		
-		-- Calling Nav:UpdateGeneration() just steps it once so you will want to loop / think it
-		-- FullGeneration does the whole loop in the module -> faster but it will lock game while its computing (Should I thread it?)
-		if(false) then
-			local StartTime = CurTime()
-			hook.Add("Think", "NavUpdateGeneration", function()
-				if(Nav:UpdateGeneration()) then
-					ErrorNoHalt("Generated in ".. string.ToMinutesSeconds(CurTime() - StartTime).."\n")
-					OnGenerated()
-					hook.Remove("Think", "NavUpdateGeneration")
-				end
-			end)
-		else
-			ErrorNoHalt("Generated in ".. string.ToMinutesSeconds(math.Round(Nav:FullGeneration())), "\n")
-			OnGenerated()		
-		end
+		--ErrorNoHalt("Generated in "..string.ToMinutesSeconds(Nav:FullGeneration()).."\n")
 	end
 end)
 
@@ -177,7 +186,8 @@ end)
 concommand.Add("snav_setend", function(ply)
 	Nav:SetEnd(Nav:GetClosestNode(ply:GetPos()))
 	End = Nav:GetEnd()
-	ComputePath()
+	-- ComputePath()
+	ComputePathHull()
 end)
 
 concommand.Add("snav_disable_node", function(ply)
@@ -190,7 +200,7 @@ concommand.Add("snav_remove_node", function(ply)
 end)
 
 concommand.Add("snav_debug", function(ply)
-	print(Nav:GetNodes(), table.Count(Nav:GetNodes()))
+	print(Nav:GetNodes(), Nav:GetStart(), Nav:GetEnd(), table.Count(Nav:GetNodes()))
 	
 	-- local ClosestNode = Nav:GetClosestNode(ply:GetPos())
 	-- ClosestNode:RemoveConnection(NORTH)
@@ -246,6 +256,20 @@ concommand.Add("snav_manual", function(ply)
 	Node1:ConnectTo(table.Random(Nav:GetNodes()), NORTH)
 end)
 
+concommand.Add("snav_save", function()
+	print("Save", Nav:Save("data/nav/"..game.GetMap()..".nav"))
+end)
+
+concommand.Add("snav_load", function()
+	print("Load", Nav:Load("data/nav/"..game.GetMap()..".nav"))
+end)
+
+concommand.Add("snav_debug_2", function()
+	for k,v in pairs(Nav:GetNodes()) do
+		print(v, v:GetPosition(), table.Count(v:GetConnections()))
+	end
+end)
+
 if(SERVER) then
 	return
 end
@@ -267,13 +291,13 @@ local function DrawNodeLines(Table, PlyPos)
 		if(PlyPos:Distance(v:GetPosition()) <= 512) then
 			for k2,v2 in pairs(v:GetConnections()) do
 				local Col = ColOTHER
-				if(k2 == NORTH) then
+				if(k2 == nav.NORTH) then
 					Col = ColNORTH
-				elseif(k2 == SOUTH) then
+				elseif(k2 == nav.SOUTH) then
 					Col = ColSOUTH
-				elseif(k2 == EAST) then
+				elseif(k2 == nav.EAST) then
 					Col = ColEAST
-				elseif(k2 == WEST) then
+				elseif(k2 == nav.WEST) then
 					Col = ColWEST
 				end
 				
@@ -299,18 +323,26 @@ end
 
 local Mat = Material("effects/laser_tracer")
 hook.Add("RenderScreenspaceEffects", "NavRenderScreenspaceEffects", function()
-	if(!Nav or !input.IsKeyDown(KEY_LALT)) then
+	if(!Nav) then
 		return
 	end
-	render.SetMaterial(Mat)
-	cam.Start3D(EyePos(), EyeAngles())
-		DrawNodeLines(Nav:GetNodes(), LocalPlayer():GetPos())
-		DrawNodePath(PrintPath)
-		if(Start) then
-			render.DrawBeam(Start:GetPosition(), Start:GetPosition() + (Start:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
-		end
-		if(End) then
-			render.DrawBeam(End:GetPosition(), End:GetPosition() + (End:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
-		end
-	cam.End3D()
+	local alt = input.IsKeyDown(KEY_LALT)
+	local shift = input.IsKeyDown(KEY_LSHIFT)
+	if(alt || shift) then
+		render.SetMaterial(Mat)
+		cam.Start3D(EyePos(), EyeAngles())
+			if(alt) then
+				DrawNodeLines(Nav:GetNodes(), LocalPlayer():GetPos())
+			end
+			if(shift) then
+				DrawNodePath(PrintPath)
+				if(Start) then
+					render.DrawBeam(Start:GetPosition(), Start:GetPosition() + (Start:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
+				end
+				if(End) then
+					render.DrawBeam(End:GetPosition(), End:GetPosition() + (End:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
+				end
+			end
+		cam.End3D()
+	end
 end)
