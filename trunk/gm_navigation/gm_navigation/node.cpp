@@ -72,12 +72,11 @@ bool Node::HasVisited(NavDirType Dir)
 	return false;
 }
 
-void Node::SetStatus(Node* P, float F, float G, float H)
+void Node::SetStatus(Node* P, float F, float G)
 {
 	AStarParent = P;
 	ScoreF = F;
 	ScoreG = G;
-	ScoreH = H;
 }
 
 bool Node::IsOpened()
@@ -118,11 +117,6 @@ Node *Node::GetAStarParent()
 void Node::SetAStarParent(Node* P)
 {
 	AStarParent = P;
-}
-
-float Node::GetScoreH()
-{
-	return ScoreH;
 }
 
 float Node::GetScoreF()

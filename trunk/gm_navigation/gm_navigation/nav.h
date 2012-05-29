@@ -12,6 +12,7 @@
 #include "defines.h"
 #include "utlbuffer.h"
 #include "utllinkedlist.h"
+#include "jobthread.h"
 
 #define MAX_GROUND_LAYERS 16
 
@@ -23,7 +24,7 @@ const float DeathDrop = 30.0f; // 200.0f; Lets check to make sure we aren't fall
 class Nav
 {
 public:
-	Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize);
+	Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int GridSize);
 	~Nav();
 	void RemoveAllNodes();
 	void SetGridSize(int GridSize);
@@ -37,7 +38,9 @@ public:
 	float Round(float Val, float Unit);
 	NavDirType OppositeDirection(NavDirType Dir);
 	bool GetGroundHeight(const Vector &pos, float *height, Vector *normal);
-	void StartGeneration();
+	CJob* GenerateQueue(JobInfo_t *info);
+	void FullGeneration(bool *abort);
+	void ResetGeneration();
 	void SetupMaxDistance(const Vector &Pos, int MaxDistance);
 	void AddWalkableSeed(const Vector &Pos, const Vector &Normal);
 	void ClearWalkableSeeds();
@@ -54,12 +57,11 @@ public:
 	float EuclideanDistance(const Vector *StartPos, const Vector *EndPos);
 
 	Node *FindLowestF();
-	CUtlVector<Node*>& FindPath();
-	CUtlVector<Node*>& CalcPath(Node *current);
+	CJob* FindPathQueue(JobInfo_t *info);
+	void ExecuteFindPath(JobInfo_t *info, Node *start, Node *end);
 	void Reset();
 	void AddOpenedNode(Node *node);
 	void AddClosedNode(Node *node);
-	bool HasFoundPath();
 	bool GetDiagonal();
 	void SetDiagonal(bool Diagonal);
 	int GetMask();
@@ -72,7 +74,8 @@ public:
 	void SetStart(Node *start);
 	void SetEnd(Node *end);
 
-	enum Heuristic {
+	enum Heuristic
+	{
 		HEURISTIC_MANHATTAN,
 		HEURISTIC_EUCLIDEAN,
 		HEURISTIC_CUSTOM
@@ -83,7 +86,7 @@ private:
 	bool Generating;
 
 	Vector StartPos;
-	Vector AddVector;
+	Vector addVector;
 
 	int NumDir;
 	bool DiagonalMode;
@@ -92,8 +95,10 @@ private:
 	int GenerationStepSize;
 	
 	GMUtility *GMU;
+	IThreadPool *threadPool;
 	IFileSystem *fs;
-
+	CThreadMutex lock;
+	
 #ifdef FILEBUG
 	FileHandle_t fh;
 #endif
@@ -106,7 +111,6 @@ private:
 	int GenerationMaxDistance;
 
 	CUtlVector<Node*> Nodes;
-	CUtlVector<Node*> Path;
 	CUtlVector<Node*> Opened;
 	CUtlVector<Node*> Closed;
 
@@ -115,7 +119,6 @@ private:
 
 	int Heuristic;
 	int HeuristicRef;
-	bool FoundPath;
 
 	int SeedIndex;
 	struct WalkableSeedSpot

@@ -103,13 +103,62 @@ void PushNode(lua_State* L, Node *node)
 
 ///////////////////////////////////////////////
 
-LUA_FUNCTION(CreateNav)
+LUA_FUNCTION(nav_Create)
 {
 	Lua()->CheckType(1, GLua::TYPE_NUMBER);
 
-	PushNav(L, new Nav(util, Gfilesystem, (int)Lua()->GetNumber(1)));
+	PushNav(L, new Nav(util, threadPool, Gfilesystem, (int)Lua()->GetNumber(1)));
 
 	return 1;
+}
+
+LUA_FUNCTION(nav_Poll)
+{
+	for(int i=0; i < JobQueue.Size(); i++)
+	{
+		JobInfo_t* info = JobQueue[i];
+		if(info->job->IsFinished())
+		{
+			Lua()->PushReference(info->funcRef);
+			PushNav(L, info->nav);
+
+			if(info->findPath)
+			{
+				Lua()->Push(info->foundPath);
+
+				ILuaObject *pathTable = Lua()->GetNewTable();
+				pathTable->Push();
+				pathTable->UnReference();
+
+				for(int i = 0; i < info->path.Count(); i++)
+				{
+					PushNode(L, info->path[i]);
+
+					ILuaObject *node = Lua()->GetObject();
+					pathTable = Lua()->GetObject(-2); // It's 5 since we pushed a bool, nav, and func before the table
+						pathTable->SetMember((float)i + 1, node);
+						Lua()->Pop();
+					pathTable->UnReference();
+					node->UnReference();
+				}
+
+				Lua()->Call(3);
+			}
+			else
+			{
+				Lua()->Call(1);
+			}
+
+			Lua()->FreeReference(info->funcRef);
+
+			SafeRelease(info->job);
+
+			delete info;
+			JobQueue.Remove(i);
+		}
+	}
+
+	return 0;
 }
 
 ///////////////////////////////////////////////
@@ -157,11 +206,11 @@ LUA_FUNCTION(Nav_GetNodes)
 	return 1;
 }
 
-LUA_FUNCTION(Nav_StartGeneration)
+LUA_FUNCTION(Nav_ResetGeneration)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	GetNav(L, 1)->StartGeneration();
+	GetNav(L, 1)->ResetGeneration();
 
 	return 0;
 }
@@ -197,14 +246,31 @@ LUA_FUNCTION(Nav_ClearWalkableSeeds)
 	return 0;
 }
 
-
-LUA_FUNCTION(Nav_UpdateGeneration)
+LUA_FUNCTION(Nav_Generate)
 {
 	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_FUNCTION);
 
-	Lua()->Push(GetNav(L, 1)->SampleStep());
+	Nav *nav = GetNav(L, 1);
 
-	return 1;
+	JobInfo_t *info = new JobInfo_t;
+	info->abort = false;
+
+	CJob* job = nav->GenerateQueue(info);
+	if(job != NULL)
+	{
+		info->job = job;
+		info->nav = nav;
+		info->findPath = false;
+		info->funcRef = Lua()->GetReference(2);
+
+		JobQueue.AddToTail(info);
+	}
+	else
+	{
+		delete info;
+	}
+	return 0;
 }
 
 LUA_FUNCTION(Nav_FullGeneration)
@@ -215,15 +281,13 @@ LUA_FUNCTION(Nav_FullGeneration)
 
 	float StartTime = engine->Time();
 
-	while(!nav->SampleStep())
-	{
-	}
+	nav->ResetGeneration();
+	nav->FullGeneration(NULL);
 
 	Lua()->Push(engine->Time() - StartTime);
 
 	return 1;
 }
-
 LUA_FUNCTION(Nav_IsGenerated)
 {
 	Lua()->CheckType(1, NAV_TYPE);
@@ -236,36 +300,65 @@ LUA_FUNCTION(Nav_IsGenerated)
 LUA_FUNCTION(Nav_FindPath)
 {
 	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_FUNCTION);
 
-	Nav *nav = GetNav(L, 1);
+	Nav* nav = GetNav(L, 1);
 
-	NodeList_t& Path = nav->FindPath();
+	JobInfo_t *info = new JobInfo_t;
 
-	if(nav->HasFoundPath())
+	CJob* job = nav->FindPathQueue(info);
+
+	if(job != NULL)
 	{
-		Lua()->Push(true);
+		info->job = job;
+		info->nav = nav;
+		info->abort = false;
+		info->findPath = true;
+		info->hull = false;
+		info->funcRef = Lua()->GetReference(2);
+
+		JobQueue.AddToTail(info);
 	}
 	else
 	{
-		Lua()->Push(false);
+		delete info;
 	}
 
-	ILuaObject *PathTable = Lua()->GetNewTable();
-	PathTable->Push();
-	PathTable->UnReference();
+	return 0;
+}
 
-	for(int i = 0; i < Path.Count(); i++)
+LUA_FUNCTION(Nav_FindPathHull)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_VECTOR);
+	Lua()->CheckType(3, GLua::TYPE_VECTOR);
+	Lua()->CheckType(4, GLua::TYPE_FUNCTION);
+
+	Nav* nav = GetNav(L, 1);
+
+	JobInfo_t *info = new JobInfo_t();
+
+	CJob* job = nav->FindPathQueue(info);
+
+	if(job != NULL)
 	{
-		PushNode(L, Path[i]);
-		ILuaObject *ObjNode = Lua()->GetObject();
-		PathTable = Lua()->GetObject(3); // It's 3 since we pushed a bool before the table
-			PathTable->SetMember((float)i + 1, ObjNode);
-			Lua()->Pop();
-		PathTable->UnReference();
-		ObjNode->UnReference();
+		info->job = job;
+		info->nav = nav;
+		info->abort = false;
+		info->findPath = true;
+		info->hull = true;
+		info->mins = GMOD_GetVector(L, 2);
+		info->maxs = GMOD_GetVector(L, 3);
+		info->funcRef = Lua()->GetReference(4);
+
+		JobQueue.AddToTail(info);
+	}
+	else
+	{
+		delete info;
 	}
 
-	return 2;
+	return 0;
 }
 
 LUA_FUNCTION(Nav_GetHeuristic)
@@ -663,10 +756,17 @@ int Init(lua_State* L)
 {
 	CreateInterfaceFn interfaceFactory = Sys_GetFactory("engine.dll");
 
-	engine = (IVEngineServer*)interfaceFactory(INTERFACEVERSION_VENGINESERVER, NULL);
+	// VEngineServerGMod021
+	// Was INTERFACEVERSION_VENGINESERVER
+	engine = (IVEngineServer*)interfaceFactory("VEngineServerGMod021", NULL);
 	if(!engine)
 	{
-		Lua()->Error("gm_navigation: Missing IVEngineServer interface.\n");
+		Msg("gm_navigation: Missing IVEngineServer interface, falling back to original interface\n");
+		engine = (IVEngineServer*)interfaceFactory(INTERFACEVERSION_VENGINESERVER, NULL);
+		if(!engine)
+		{
+			Lua()->Error("gm_navigation: Missing IVEngineServer interface.\n");
+		}
 	}
 
 	if(Lua()->IsClient())
@@ -708,39 +808,55 @@ int Init(lua_State* L)
 
 	util = new GMUtility(Genginetrace[(int)Lua()->IsClient()], Lua()->IsServer());
 
-	Lua()->SetGlobal("NORTH", (float)NORTH);
-	Lua()->SetGlobal("SOUTH", (float)SOUTH);
-	Lua()->SetGlobal("EAST", (float)EAST);
-	Lua()->SetGlobal("WEST", (float)WEST);
+	threadPool = CreateThreadPool();
 
-	Lua()->SetGlobal("NORTHEAST", (float)NORTHEAST);
-	Lua()->SetGlobal("NORTHWEST", (float)NORTHWEST);
-	Lua()->SetGlobal("SOUTHEAST", (float)SOUTHEAST);
-	Lua()->SetGlobal("SOUTHWEST", (float)SOUTHWEST);
+	ThreadPoolStartParams_t params;
+	params.nThreads = 4;
 
-	Lua()->SetGlobal("NUM_DIRECTIONS", (float)NUM_DIRECTIONS);
-	Lua()->SetGlobal("NUM_DIRECTIONS_DIAGONAL", (float)NUM_DIRECTIONS_DIAGONAL);
-	Lua()->SetGlobal("NUM_DIRECTIONS_MAX", (float)NUM_DIRECTIONS_MAX);
+	if(!threadPool->Start(params))
+	{
+		SafeRelease(threadPool);
+		Lua()->Error("gm_navigation: Thread pool is null\n");
+	}
 
-	Lua()->SetGlobal("HEURISTIC_MANHATTAN", (float)Nav::HEURISTIC_MANHATTAN);
-	Lua()->SetGlobal("HEURISTIC_EUCLIDEAN", (float)Nav::HEURISTIC_EUCLIDEAN);
-	Lua()->SetGlobal("HEURISTIC_CUSTOM", (float)Nav::HEURISTIC_CUSTOM);
+	ILuaObject* navTable = Lua()->GetNewTable();
+		navTable->SetMember("Create", nav_Create);
+		navTable->SetMember("Poll", nav_Poll);
 
-	Lua()->SetGlobal("CreateNav", CreateNav);
+		navTable->SetMember("NORTH", (float)NORTH);
+		navTable->SetMember("SOUTH", (float)SOUTH);
+		navTable->SetMember("EAST", (float)EAST);
+		navTable->SetMember("WEST", (float)WEST);
+
+		navTable->SetMember("NORTHEAST", (float)NORTHEAST);
+		navTable->SetMember("NORTHWEST", (float)NORTHWEST);
+		navTable->SetMember("SOUTHEAST", (float)SOUTHEAST);
+		navTable->SetMember("SOUTHWEST", (float)SOUTHWEST);
+
+		navTable->SetMember("NUM_DIRECTIONS", (float)NUM_DIRECTIONS);
+		navTable->SetMember("NUM_DIRECTIONS_DIAGONAL", (float)NUM_DIRECTIONS_DIAGONAL);
+		navTable->SetMember("NUM_DIRECTIONS_MAX", (float)NUM_DIRECTIONS_MAX);
+
+		navTable->SetMember("HEURISTIC_MANHATTAN", (float)Nav::HEURISTIC_MANHATTAN);
+		navTable->SetMember("HEURISTIC_EUCLIDEAN", (float)Nav::HEURISTIC_EUCLIDEAN);
+		navTable->SetMember("HEURISTIC_CUSTOM", (float)Nav::HEURISTIC_CUSTOM);
+
+	Lua()->SetGlobal("nav", navTable);
+	navTable->UnReference();
 
 	ILuaObject *MetaNav = Lua()->GetMetaTable(NAV_NAME, NAV_TYPE);
 		ILuaObject *NavIndex = Lua()->GetNewTable();
 			NavIndex->SetMember("GetNodeByID", Nav_GetNodeByID);
 			NavIndex->SetMember("GetNodes", Nav_GetNodes);
 			NavIndex->SetMember("GetNodeTotal", Nav_GetNodeTotal);
-			NavIndex->SetMember("StartGeneration", Nav_StartGeneration);
 			NavIndex->SetMember("AddWalkableSeed", Nav_AddWalkableSeed);
 			NavIndex->SetMember("ClearWalkableSeeds", Nav_ClearWalkableSeeds);
 			NavIndex->SetMember("SetupMaxDistance", Nav_SetupMaxDistance);
-			NavIndex->SetMember("UpdateGeneration", Nav_UpdateGeneration);
+			NavIndex->SetMember("Generate", Nav_Generate);
 			NavIndex->SetMember("FullGeneration", Nav_FullGeneration);
 			NavIndex->SetMember("IsGenerated", Nav_IsGenerated);
 			NavIndex->SetMember("FindPath", Nav_FindPath);
+			NavIndex->SetMember("FindPathHull", Nav_FindPathHull);
 			NavIndex->SetMember("GetHeuristic", Nav_GetHeuristic);
 			NavIndex->SetMember("GetStart", Nav_GetStart);
 			NavIndex->SetMember("GetEnd", Nav_GetEnd);
@@ -759,7 +875,6 @@ int Init(lua_State* L)
 			NavIndex->SetMember("SetMask", Nav_SetMask);
 			NavIndex->SetMember("CreateNode", Nav_CreateNode);
 			NavIndex->SetMember("RemoveNode", Nav_RemoveNode);
-
 		MetaNav->SetMember("__index", NavIndex);
 		NavIndex->UnReference();
 	MetaNav->UnReference();
@@ -767,27 +882,34 @@ int Init(lua_State* L)
 	ILuaObject *MetaNode = Lua()->GetMetaTable(NODE_NAME, NODE_TYPE);
 		ILuaObject *NodeIndex = Lua()->GetNewTable();
 			NodeIndex->SetMember("GetID", Node_GetID);
-			
 			NodeIndex->SetMember("GetPosition", Node_GetPosition);
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
 			NodeIndex->SetMember("IsConnected", Node_IsConnected);
-
 			NodeIndex->SetMember("IsDisabled", Node_IsDisabled);
 			NodeIndex->SetMember("SetDisabled", Node_SetDisabled);
-
 			NodeIndex->SetMember("SetNormal", Node_SetNormal);
 			NodeIndex->SetMember("SetPosition", Node_SetPosition);
 			NodeIndex->SetMember("ConnectTo", Node_ConnectTo);
 			NodeIndex->SetMember("RemoveConnection", Node_RemoveConnection);
-
 		MetaNode->SetMember("__index", NodeIndex);
 		MetaNode->SetMember("__eq", Node__eq);
-
 		NodeIndex->UnReference();
 	MetaNode->UnReference();
 
-	Msg("gm_navigation: Programmed by Spacetech\n");
+	// Base on azuisleet's method.
+	// hook.Add("Think", "NavPoll", nav.Poll)
+	ILuaObject *hook = Lua()->GetGlobal("hook");
+	ILuaObject *add = hook->GetMember("Add");
+	add->Push();
+		Lua()->Push("Think");
+		Lua()->Push("NavPoll");
+		Lua()->Push(nav_Poll);
+	Lua()->Call(3);
+	hook->UnReference();
+	add->UnReference();
+
+	Msg("gm_navigation: Loaded\n");
 
 	return 0;
 }
@@ -799,5 +921,17 @@ int Shutdown(lua_State* L)
 		Lua()->FreeReference(VectorMetaRef);
 		VectorMetaRef = NULL;
 	}
+
+	if(threadPool != NULL)
+	{
+		for(int i=0; i < JobQueue.Size(); i++)
+		{
+			JobQueue[i]->abort = true;
+		}
+		threadPool->Stop();
+		DestroyThreadPool(threadPool);
+		threadPool = NULL;
+	}
+
 	return 0;
 }

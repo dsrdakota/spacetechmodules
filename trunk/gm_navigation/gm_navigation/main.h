@@ -9,22 +9,18 @@
 #include "engine/ienginetrace.h"
 #include "tier0/memdbgon.h"
 
-#include "gmluamodule.h"
-
 #include "sigscan.h"
-
-#define NAV_NAME "Nav"
-#define NAV_TYPE 7456
-
-#define NODE_NAME "Node"
-#define NODE_TYPE 7457
-
-#include "gmutility.h"
 
 #include "node.h"
 #include "nav.h"
 
+#include "gmutility.h"
+
 typedef CUtlVector<Node*> NodeList_t;
+
+CUtlVector<JobInfo_t*> JobQueue;
+
+IThreadPool* threadPool;
 
 NavDirType OppositeDirection(NavDirType Dir)
 {
