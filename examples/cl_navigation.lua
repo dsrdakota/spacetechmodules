@@ -18,7 +18,7 @@ Nav:SetDiagonal(Diagonal) -- Enable / Disable Diagonal linking (Will DOUBLE the 
 
 -- Nav:SetGridSize(256) -- You can change the grid size this way.
 
--- The module will ignore COLLISION_GROUP_PLAYER
+-- The module will ignore COLLISION_GROUP_PLAYER during generation
 
 local PrintPath = {}
 local Start, End
