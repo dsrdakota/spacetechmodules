@@ -16,7 +16,7 @@ local Diagonal = true
 -- Diagonal Linking is disabled by default
 Nav:SetDiagonal(Diagonal) -- Enable / Disable Diagonal linking (Will DOUBLE the time it takes for the generation)
 
--- Nav:SetGridSize(256) -- You can also set grid size this way (But its required to at least put some number in CreateNav
+-- Nav:SetGridSize(256) -- You can change the grid size this way.
 
 -- The module will ignore COLLISION_GROUP_PLAYER
 
