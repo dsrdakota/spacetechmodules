@@ -5,12 +5,11 @@
 
 #include "nav.h"
 
-Nav::Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize)
+Nav::Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int GridSize)
 {
 	GMU = gmu;
 	fs = filesystem;
 
-	FoundPath = false;
 	Heuristic = HEURISTIC_MANHATTAN;
 
 	Start = NULL;
@@ -30,6 +29,8 @@ Nav::Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize)
 	Nodes.EnsureCapacity(10240);
 	WalkableSeedList.EnsureCapacity(16);
 
+	this->threadPool = threadPool;
+
 #ifdef FILEBUG
 	fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
 
@@ -39,17 +40,35 @@ Nav::Nav(GMUtility *gmu, IFileSystem *filesystem, int GridSize)
 
 Nav::~Nav()
 {
+#ifdef FILEBUG
+	fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+
+	fs->FPrintf(fh, "Deconstructing Nav\n");
+#endif
+	
 	Msg("Deconstructing Nav!?\n");
+
+#ifdef FILEBUG
+		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+
+		fs->FPrintf(fh, "Freeing Nodes\n");
+#endif
+
 	Nodes.PurgeAndDeleteElements();
-	//Path.PurgeAndDeleteElements();
 	//Opened.PurgeAndDeleteElements();
    // Closed.PurgeAndDeleteElements();
+
+#ifdef FILEBUG
+		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+
+		fs->FPrintf(fh, "Freed Nodes\n");
+#endif
 }
 
 void Nav::SetGridSize(int GridSize)
 {
 	GenerationStepSize = GridSize;
-	AddVector = Vector(0, 0, GridSize / 2);
+	addVector = Vector(0, 0, GridSize / 2);
 }
 
 Node *Nav::GetNode(const Vector &Pos)
@@ -209,18 +228,10 @@ NavDirType Nav::OppositeDirection(NavDirType Dir)
 		case SOUTH: return NORTH;
 		case EAST:	return WEST;
 		case WEST:	return EAST;
-	}
-
-	// Maybe put this as the default case for the above switch?
-	if(DiagonalMode)
-	{
-		switch(Dir)
-		{
-			case NORTHEAST: return SOUTHWEST;
-			case NORTHWEST: return SOUTHEAST;
-			case SOUTHEAST:	return NORTHWEST;
-			case SOUTHWEST: return NORTHEAST;
-		}
+		case NORTHEAST: return SOUTHWEST;
+		case NORTHWEST: return SOUTHEAST;
+		case SOUTHEAST:	return NORTHWEST;
+		case SOUTHWEST: return NORTHEAST;
 	}
 
 	return NORTH;
@@ -297,13 +308,39 @@ bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
 	return true;
 }
 
-void Nav::StartGeneration()
+CJob* Nav::GenerateQueue(JobInfo_t *info)
 {
-	if(WalkableSeedList.Count() == 0)
+	if(Generating)
 	{
-		return;
+		return NULL;
 	}
-	
+
+	ResetGeneration();
+
+	return threadPool->QueueCall(this, &Nav::FullGeneration, &info->abort);
+}
+
+void Nav::FullGeneration(bool *abort)
+{
+#ifdef FILEBUG
+		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+
+		fs->FPrintf(fh, "FullGeneration Start\n");
+#endif
+
+	while(!SampleStep() && *abort == false)
+	{
+	}
+
+#ifdef FILEBUG
+		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
+
+		fs->FPrintf(fh, "FullGeneration End\n");
+#endif
+}
+
+void Nav::ResetGeneration()
+{
 	SeedIndex = 0;
 	CurrentNode = NULL;
 
@@ -408,7 +445,7 @@ bool Nav::SampleStep()
 
 	if(!Generating)
 	{
-		return false;
+		return true;
 	}
 
 	// take a step
@@ -421,6 +458,7 @@ bool Nav::SampleStep()
 			if(CurrentNode == NULL)
 			{
 				Generated = true;
+				Generating = false;
 				return true;
 			}
 		}
@@ -491,8 +529,8 @@ bool Nav::SampleStep()
 
 				Vector from = *CurrentNode->GetPosition();
 
-				Vector fromOrigin = from + AddVector;
-				Vector toOrigin = to + AddVector;
+				Vector fromOrigin = from + addVector;
+				Vector toOrigin = to + addVector;
 
 				trace_t result;
 
@@ -592,6 +630,11 @@ bool Nav::SampleStep()
 
 bool Nav::Save(const char *Filename)
 {
+	if(Generating)
+	{
+		return false;
+	}
+
 	CUtlBuffer buf;
 
 	Node *node, *connection;
@@ -663,6 +706,11 @@ bool Nav::Save(const char *Filename)
 
 bool Nav::Load(const char *Filename)
 {
+	if(Generating)
+	{
+		return false;
+	}
+
 	CUtlBuffer buf;
 
 	if(!fs->ReadFile(Filename, "MOD", buf))
@@ -752,7 +800,6 @@ void Nav::Reset()
 		node->SetClosed(false);
 		node->SetOpened(false);
 	}
-	Path.RemoveAll();
 	Opened.RemoveAll();
 	Closed.RemoveAll();
 }
@@ -775,7 +822,6 @@ void Nav::AddClosedNode(Node *node)
 
 float Nav::HeuristicDistance(const Vector *StartPos, const Vector *EndPos)
 {
-	// Seems like HEURISTIC_EUCLIDEAN == HEURISTIC_DISTANCE
 	if(Heuristic == HEURISTIC_MANHATTAN)
 	{
 		return ManhattanDistance(StartPos, EndPos);
@@ -822,118 +868,100 @@ Node *Nav::FindLowestF()
 	return winner;
 }
 
-CUtlVector<Node*>& Nav::FindPath()
+CJob* Nav::FindPathQueue(JobInfo_t *info)
 {
+	return threadPool->QueueCall(this, &Nav::ExecuteFindPath, info, Start, End);
+}
+
+void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
+{
+	lock.Lock();
 	Reset();
 
-	FoundPath = false;
+	info->foundPath = false;
 
-	if(GetStart() == NULL || GetEnd() == NULL || GetStart() == GetEnd())
+	if(start == NULL || end == NULL || start == end)
 	{
-		return Path;
+		lock.Unlock();
+		return;
 	}
 
-	// 1) Add the starting node to the open list.
-	AddOpenedNode(Start);
-	Start->SetStatus(NULL, 0, 0, 0);
+	AddOpenedNode(start);
+	start->SetStatus(NULL, HeuristicDistance(start->GetPosition(), end->GetPosition()), 0);
 
-	float CurrentScoreG;
-	float ScoreF, ScoreG, ScoreH;
-	Node *Current = NULL, *LastNode = NULL, *Connection = NULL;
+	float currentScoreG, scoreG;
+	Node *current = NULL, *connection = NULL;
 	
 #ifdef FILEBUG
 	fs->FPrintf(fh, "Added Node\n");
 #endif
 
-	// 2) Repeat the following:
-	while(true)
+	while(true && !info->abort)
 	{
-		// a) Look for the lowest F cost square on the open list. We refer to this as the current square.
-		Current = FindLowestF();
+		current = FindLowestF();
 
-		if(Current != NULL)
+		if(current == NULL)
 		{
-			LastNode = Current;
+			break;
+		}
 
-			if(Current->GetPosition() == End->GetPosition())
-			{
-				FoundPath = true;
-				break;
-			}
-			else
-			{
-				CurrentScoreG = Current->GetScoreG();
-
-				// b) Switch it to the closed list.
-				AddClosedNode(Current);
-
-				// c) For each of the nodes linked to this node...
-				ScoreH = HeuristicDistance(Current->GetPosition(), End->GetPosition());
-				
-				if(ScoreH != NULL)
-				{
-					for(int Dir = NORTH; Dir < NumDir; Dir++)
-					{
-#ifdef FILEBUG
-						fs->FPrintf(fh, "Looking for Connection: %i\n", Dir);
-#endif
-						Connection = Current->GetConnectedNode((NavDirType)Dir);
-						if(Connection != NULL)
-						{
-#ifdef FILEBUG
-							fs->FPrintf(fh, "Connected Node Found: %i\n", Dir);
-#endif
-							if(!Connection->IsClosed() && !Connection->IsDisabled())
-							{
-
-#ifdef FILEBUG
-								fs->FPrintf(fh, "Not Closed\n");
-#endif
-								// If it isn’t on the open list, add it to the open list. Make the current node the parent of this node. Record the F, G, and H costs of the node. 
-								if(!Connection->IsOpened())
-								{
-									AddOpenedNode(Connection);
-									ScoreG = CurrentScoreG + HeuristicDistance(Current->GetPosition(), Connection->GetPosition());
-									ScoreF = ScoreG + ScoreH;
-									Connection->SetStatus(Current, ScoreF, ScoreG, ScoreH);
-								}
-
-								if(CurrentScoreG > ScoreG)
-								{
-									Connection->SetAStarParent(Current);
-								}
-							}
-						}
-					}
-				}
-			}
+		if(current == end)
+		{
+			info->foundPath = true;
+			break;
 		}
 		else
 		{
-			break;
+			AddClosedNode(current);
+
+			currentScoreG = current->GetScoreG();
+
+			for(int Dir = NORTH; Dir < NumDir; Dir++)
+			{
+				connection = current->GetConnectedNode((NavDirType)Dir);
+
+				if(connection == NULL)
+				{
+					continue;
+				}
+
+				if(connection->IsClosed() || connection->IsDisabled())
+				{
+					continue;
+				}
+				
+				scoreG = currentScoreG + EuclideanDistance(current->GetPosition(), connection->GetPosition()); // dist_between here
+
+				if(!connection->IsOpened() || scoreG < connection->GetScoreG())
+				{
+					if(info->hull)
+					{
+						trace_t result;
+						GMU->TraceHull(*current->GetPosition(), *connection->GetPosition(), info->mins, info->maxs, Mask, &result);
+						if(result.DidHit())
+						{
+							continue;
+						}
+					}
+
+					AddOpenedNode(connection);
+					connection->SetStatus(current, scoreG + HeuristicDistance(connection->GetPosition(), end->GetPosition()), scoreG);
+				}
+			}
 		}
 	}
 
-	return CalcPath(LastNode);
-}
-
-CUtlVector<Node*>& Nav::CalcPath(Node *Current)
-{
 	while(true)
 	{
-		if(Current == NULL)
+		if(current == NULL)
 		{
 			break;
 		}
-		Path.AddToHead(Current);
-		Current = Current->GetAStarParent();
+		info->path.AddToHead(current);
+		current = current->GetAStarParent();
 	}
-	return Path;
-}
 
-bool Nav::HasFoundPath()
-{
-	return FoundPath;
+	lock.Unlock();
 }
 
 int Nav::GetMask()

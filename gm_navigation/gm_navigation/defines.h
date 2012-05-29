@@ -8,6 +8,12 @@
 
 //#define FILEBUG
 
+#define NAV_NAME "Nav"
+#define NAV_TYPE 7456
+
+#define NODE_NAME "Node"
+#define NODE_TYPE 7457
+
 enum NavDirType
 {
 	NORTH = 0,

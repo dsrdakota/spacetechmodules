@@ -9,6 +9,7 @@
 #include "eiface.h"
 #include "gmutility.h"
 #include "defines.h"
+#include "gmluamodule.h"
 
 class Node
 {
@@ -27,14 +28,13 @@ public:
 	bool HasVisited(NavDirType Dir);
 	
 	// Stuff for AStar
-	void SetStatus(Node* P, float F, float G, float H);
+	void SetStatus(Node* P, float F, float G);
 	bool IsOpened();
 	void SetOpened(bool Open);
 	bool IsDisabled();
 	void SetDisabled(bool Disabled);
 	bool IsClosed();
 	void SetClosed(bool Close);
-	float GetScoreH();
 	float GetScoreF();
 	float GetScoreG();
 	int GetID();
@@ -57,7 +57,23 @@ private:
 	bool Disabled;
 	float ScoreF;
 	float ScoreG;
-	float ScoreH;
+};
+
+
+class Nav;
+class CJob;
+struct JobInfo_t
+{
+	CJob* job;
+	Nav* nav;
+	bool abort;
+	bool findPath;
+	bool foundPath;
+	bool hull;
+	Vector mins;
+	Vector maxs;
+	CUtlVector<Node*> path;
+	int funcRef;
 };
 
 #endif

@@ -51,12 +51,15 @@ class GMUtility
 {
 
 public:
-	GMUtility(IEngineTrace *et, bool ServerSide);
+	GMUtility(IEngineTrace *et, bool serverSide);
 	~GMUtility();
 
-	void TraceLine(const Vector& StartPos, const Vector& EndPos, unsigned int Mask, trace_t *ptr);
-
+	void TraceLine(const Vector& start, const Vector& end, unsigned int mask, trace_t *ptr);
+	void TraceHull(const Vector& start, const Vector& end, const Vector& mins, const Vector& maxs, unsigned int mask, trace_t *ptr);
+	
 private:
+	Ray_t ray;
+	Ray_t rayHull;
 	IEngineTrace *enginetrace;
 	GMOD_TraceFilter *traceFilter;
 
