@@ -723,10 +723,7 @@ bool Nav::Load(const char *Filename)
 	Node *node;
 	int Dir, SrcID, DestID;
 
-	///////////////////////////
-	// The Best Fix EVER MADE
 	Nodes.RemoveAll();
-	///////////////////////////
 
 	//////////////////////////////////////////////
 	// Nodes
