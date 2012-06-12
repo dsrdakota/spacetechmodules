@@ -13,6 +13,7 @@
 #include "utlbuffer.h"
 #include "utllinkedlist.h"
 #include "jobthread.h"
+#include <time.h>
 
 #define MAX_GROUND_LAYERS 16
 

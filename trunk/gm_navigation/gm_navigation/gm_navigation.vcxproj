@@ -36,7 +36,7 @@
       <Optimization>MinSpace</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>C:\Programming\hl2sdk-ob-valve;C:\Programming\hl2sdk-ob-valve/common;C:\Programming\hl2sdk-ob-valve/common/xbox;C:\Programming\hl2sdk-ob-valve/public;C:\Programming\hl2sdk-ob-valve/public/tier0;C:\Programming\hl2sdk-ob-valve/public/tier1;C:\Programming\hl2sdk-ob-valve/src/public/tier2;C:\Programming\hl2sdk-ob-valve/public/tier3;C:\Programming\hl2sdk-ob-valve/game/client;C:\Programming\hl2sdk-ob-valve/game/shared;C:\Programming\hl2sdk-ob-valve/game/server;C:\Programming\hl2sdk-ob-valve/src/utils/common;C:\Programming\hl2sdk-ob-valve/src/dlls;C:\Programming\hl2sdk-ob-valve/src/dlls/hl2_dll;C:\Programming\hl2sdk-ob-valve/src/episodic;C:\Programming\Garrysmod\gmodmodules\secretheaders;F:\Downloads\Azuisleet Modules\secretheaders;C:\Programming\hl2sdk-ob-valve\public\vstdlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Programming\hl2sdk-ob-valve;C:\Programming\hl2sdk-ob-valve/common;C:\Programming\hl2sdk-ob-valve/common/xbox;C:\Programming\hl2sdk-ob-valve/public;C:\Programming\hl2sdk-ob-valve/public/tier0;C:\Programming\hl2sdk-ob-valve/public/tier1;C:\Programming\hl2sdk-ob-valve/src/public/tier2;C:\Programming\hl2sdk-ob-valve/public/tier3;C:\Programming\hl2sdk-ob-valve/game/client;C:\Programming\hl2sdk-ob-valve/game/shared;C:\Programming\hl2sdk-ob-valve/game/server;C:\Programming\hl2sdk-ob-valve/src/utils/common;C:\Programming\hl2sdk-ob-valve/src/dlls;C:\Programming\hl2sdk-ob-valve/src/dlls/hl2_dll;C:\Programming\hl2sdk-ob-valve/src/episodic;C:\Programming\Garrysmod\Azuisleet Modules\secretheaders;C:\Programming\hl2sdk-ob-valve\public\vstdlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -60,8 +60,8 @@
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
     <PostBuildEvent>
-      <Command>copy "$(TargetPath)" "C:\Program Files (x86)\Steam\steamapps\space326\garry's mod beta\garrysmodbeta\lua\includes\modules\"
-copy "$(TargetPath)" "C:\Program Files (x86)\Steam\steamapps\space326\garrysmod\garrysmod\lua\includes\modules\"</Command>
+      <Command>copy "$(TargetPath)" "H:\steamapps\space326\garry's mod beta\garrysmodbeta\lua\includes\modules\"
+copy "$(TargetPath)" "H:\steamapps\space326\garrysmod\garrysmod\lua\includes\modules\"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>

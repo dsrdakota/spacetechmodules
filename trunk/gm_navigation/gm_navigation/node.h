@@ -74,6 +74,8 @@ struct JobInfo_t
 	Vector maxs;
 	CUtlVector<Node*> path;
 	int funcRef;
+	time_t updateTime;
+	int updateRef;
 };
 
 #endif
