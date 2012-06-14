@@ -7,7 +7,7 @@ require("navigation")
 
 -- If running clientside hold down alt to see it.
 
-local GridSize = 32 -- Space between the nodes
+local GridSize = 64 -- Space between the nodes
 
 local Nav = nav.Create(GridSize)
 
@@ -35,6 +35,7 @@ local function TraceDown(Pos)
 	local trace = {}
 	trace.start = Pos + Vector(0, 0, 1)
 	trace.endpos = trace.start - Vector(0, 0, 9000)
+	trace.ignore = LocalPlayer()
 	trace.mask = Mask
 	local tr = util.TraceLine(trace)
 	return tr.HitWorld, tr.HitPos, tr.HitNormal
@@ -143,9 +144,9 @@ local function OnGenerated(Loaded)
 	end
 end
 
--- Make sure you are nocliped and above the ground (Not sure if I need to do this anymore?)
-concommand.Add("snav_generate", function(ply)
-	HitWorld, Pos, Normal = TraceDown((IsValid(ply) and ply:GetPos()) or Vector(0, 0, 1))
+-- Make sure you are nocliped and above the ground
+concommand.Add("snav_generate_ground", function(ply)
+	HitWorld, Pos, Normal = TraceDown((IsValid(ply) and (ply:GetPos() + Vector(0, 0, 5))) or Vector(0, 0, 1))
 	
 	if(HitWorld) then
 		ErrorNoHalt("Creating Nav\n")
@@ -155,23 +156,85 @@ concommand.Add("snav_generate", function(ply)
 			Nav:SetupMaxDistance(ply:GetPos(), 1024) -- All nodes must stay within 256 vector distance from the players position
 		end
 		
-		Nav:ClearWalkableSeeds()
+		Nav:ClearGroundSeeds()
+		Nav:ClearAirSeeds()
 		
 		-- Once 1 seed runs out, it will go onto the next seed
-		Nav:AddWalkableSeed(Pos, Normal)
+		Nav:AddGroundSeed(Pos, Normal)
 		
 		HitWorld, Pos, Normal = TraceDown(Vector(0, 0, 0))
-		
-		Nav:AddWalkableSeed(Pos, Normal)
+		Nav:AddGroundSeed(Pos, Normal)
 		
 		-- The module will account for node overlapping
-		Nav:AddWalkableSeed(Pos, NormalUp)
-		Nav:AddWalkableSeed(Pos, NormalUp)
+		Nav:AddGroundSeed(Pos, NormalUp)
+		Nav:AddGroundSeed(Pos, NormalUp)
 		
 		local StartTime = os.time()
 		
 		Nav:Generate(function(Nav)
 			ErrorNoHalt("Generated "..Nav:GetNodeTotal().." nodes in "..string.ToMinutesSeconds(os.time() - StartTime).."\n")
+		end, function(Nav, GeneratedNodes)
+			ErrorNoHalt("Generated "..GeneratedNodes.." nodes so far\n")
+		end)
+		
+		--ErrorNoHalt("Generated in "..string.ToMinutesSeconds(Nav:FullGeneration()).."\n")
+	end
+end)
+
+concommand.Add("snav_generate_air_only", function(ply)
+	HitWorld, Pos, Normal = TraceDown((IsValid(ply) and (ply:GetPos() + Vector(0, 0, 5))) or Vector(0, 0, 1))
+	
+	if(HitWorld) then
+		ErrorNoHalt("Creating Nav\n")
+		
+		if(IsValid(ply)) then
+			-- Remove this line if you don't want a max distance
+			Nav:SetupMaxDistance(ply:GetPos(), 1024) -- All nodes must stay within 256 vector distance from the players position
+		end
+		
+		Nav:ClearGroundSeeds()
+		Nav:ClearAirSeeds()
+		
+		-- generate air nodes
+		Nav:AddAirSeed(Pos + Vector(0, 0, GridSize + 1))
+		
+		local StartTime = os.time()
+		
+		Nav:Generate(function(Nav)
+			ErrorNoHalt("Generated "..Nav:GetNodeTotal().." nodes in "..string.ToMinutesSeconds(os.time() - StartTime).."\n")
+		end, function(Nav, GeneratedNodes)
+			ErrorNoHalt("Generated "..GeneratedNodes.." nodes so far\n")
+		end)
+		
+		--ErrorNoHalt("Generated in "..string.ToMinutesSeconds(Nav:FullGeneration()).."\n")
+	end
+end)
+
+concommand.Add("snav_generate_ground_air", function(ply)
+	HitWorld, Pos, Normal = TraceDown((IsValid(ply) and (ply:GetPos() + Vector(0, 0, 5))) or Vector(0, 0, 1))
+	
+	if(HitWorld) then
+		ErrorNoHalt("Creating Nav\n")
+		
+		if(IsValid(ply)) then
+			-- Remove this line if you don't want a max distance
+			Nav:SetupMaxDistance(ply:GetPos(), 1024) -- All nodes must stay within 256 vector distance from the players position
+		end
+		
+		Nav:ClearGroundSeeds()
+		Nav:ClearAirSeeds()
+		
+		Nav:AddGroundSeed(Pos, Normal)
+		
+		-- generate air nodes
+		Nav:AddAirSeed(Pos + Vector(0, 0, GridSize + 1))
+		
+		local StartTime = os.time()
+		
+		Nav:Generate(function(Nav)
+			ErrorNoHalt("Generated "..Nav:GetNodeTotal().." nodes in "..string.ToMinutesSeconds(os.time() - StartTime).."\n")
+		end, function(Nav, GeneratedNodes)
+			ErrorNoHalt("Generated "..GeneratedNodes.." nodes so far\n")
 		end)
 		
 		--ErrorNoHalt("Generated in "..string.ToMinutesSeconds(Nav:FullGeneration()).."\n")
@@ -179,6 +242,7 @@ concommand.Add("snav_generate", function(ply)
 end)
 
 concommand.Add("snav_setstart", function(ply)
+	print(Nav:GetClosestNode(ply:GetPos()):GetPos())
 	Nav:SetStart(Nav:GetClosestNode(ply:GetPos()))
 	Start = Nav:GetStart()
 end)
@@ -288,8 +352,10 @@ local ColPath = Color(255, 0, 0, 255)
 
 local function DrawNodeLines(Table, PlyPos)
 	for k,v in pairs(Table) do
-		if(PlyPos:Distance(v:GetPosition()) <= 512) then
-			for k2,v2 in pairs(v:GetConnections()) do
+		local pos = v:GetPosition()
+		if(PlyPos:Distance(pos) <= 512) then
+			local connections = v:GetConnections()
+			for k2,v2 in pairs(connections) do
 				local Col = ColOTHER
 				if(k2 == nav.NORTH) then
 					Col = ColNORTH
@@ -301,14 +367,18 @@ local function DrawNodeLines(Table, PlyPos)
 					Col = ColWEST
 				end
 				
-				render.DrawBeam(v:GetPosition(), v:GetPosition() + (v2:GetPosition() - v:GetPosition()) * 0.3, 4, 0.25, 0.75, Col)
+				render.DrawBeam(pos, pos + (v2:GetPosition() - pos) * 0.3, 4, 0.25, 0.75, Col)
 			end
 			
 			local ColNorm = ColNORMAL
 			if(v:IsDisabled()) then
 				ColNorm = ColDisabled
 			end
-			render.DrawBeam(v:GetPosition(), v:GetPosition() + (v:GetNormal() * 13), 4, 0.25, 0.75, ColNorm)
+			
+			local normal = v:GetNormal()
+			if(normal != 0 and normal.y != 0 and normal.z != 0) then
+				render.DrawBeam(pos, pos + (normal * 13), 4, 0.25, 0.75, ColNorm)
+			end
 		end
 	end
 end
@@ -321,10 +391,17 @@ local function DrawNodePath(Table)
 	end
 end
 
+local nodes = {}
+local nodeTotal = 0
+
 local Mat = Material("effects/laser_tracer")
 hook.Add("RenderScreenspaceEffects", "NavRenderScreenspaceEffects", function()
 	if(!Nav) then
 		return
+	end
+	if(Nav:GetNodeTotal() != nodeTotal) then
+		nodes = Nav:GetNodes()
+		nodeTotal = Nav:GetNodeTotal()
 	end
 	local alt = input.IsKeyDown(KEY_LALT)
 	local shift = input.IsKeyDown(KEY_LSHIFT)
@@ -332,15 +409,25 @@ hook.Add("RenderScreenspaceEffects", "NavRenderScreenspaceEffects", function()
 		render.SetMaterial(Mat)
 		cam.Start3D(EyePos(), EyeAngles())
 			if(alt) then
-				DrawNodeLines(Nav:GetNodes(), LocalPlayer():GetPos())
+				DrawNodeLines(nodes, LocalPlayer():GetPos())
 			end
 			if(shift) then
 				DrawNodePath(PrintPath)
 				if(Start) then
-					render.DrawBeam(Start:GetPosition(), Start:GetPosition() + (Start:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
+					local normal = Start:GetNormal()
+					if(normal.x != 0 or normal.y != 0 or normal.z != 0) then
+						render.DrawBeam(Start:GetPosition(), Start:GetPosition() + (Start:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
+					else
+						render.DrawBeam(Start:GetPosition(), Start:GetPosition() + (vector_up * 32), 4, 0.25, 0.75, ColPath)
+					end
 				end
 				if(End) then
-					render.DrawBeam(End:GetPosition(), End:GetPosition() + (End:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
+					local normal = End:GetNormal()
+					if(normal.x != 0 or normal.y != 0 or normal.z != 0) then
+						render.DrawBeam(End:GetPosition(), End:GetPosition() + (End:GetNormal() * 64), 4, 0.25, 0.75, ColPath)
+					else
+						render.DrawBeam(End:GetPosition(), End:GetPosition() + (vector_up * 32), 4, 0.25, 0.75, ColPath)
+					end
 				end
 			end
 		cam.End3D()

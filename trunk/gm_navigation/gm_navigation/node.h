@@ -48,7 +48,7 @@ private:
 	int ID;
 	Node *Parent;
 
-	unsigned char Visited;
+	unsigned short Visited;
 	Node *Connections[NUM_DIRECTIONS_MAX];
 
 	Node *AStarParent;
@@ -58,7 +58,6 @@ private:
 	float ScoreF;
 	float ScoreG;
 };
-
 
 class Nav;
 class CJob;
