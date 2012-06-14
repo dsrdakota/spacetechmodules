@@ -21,12 +21,27 @@ const float HumanHeight = 72.0f;
 const float HalfHumanHeight = 36.0f;
 const float JumpCrouchHeight = 58.0f; // This shouldn't be constant if your going up stairs with different grid sizes;
 const float DeathDrop = 30.0f; // 200.0f; Lets check to make sure we aren't falling down
+const Vector vector_origin = Vector(0, 0, 0);
+
+struct GroundSeedSpot
+{
+	Vector pos;
+	Vector normal;
+};
+
+struct AirSeedSpot
+{
+	Vector pos;
+	Vector normal;
+};
 
 class Nav
 {
 public:
 	Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int GridSize);
 	~Nav();
+	static NavDirType OppositeDirection(NavDirType Dir);
+
 	void RemoveAllNodes();
 	void SetGridSize(int GridSize);
 	Node *GetNode(const Vector &Pos);
@@ -37,15 +52,19 @@ public:
 	float SnapToGrid(float x);
 	Vector SnapToGrid(const Vector& in, bool snapX = true, bool snapY = true);
 	float Round(float Val, float Unit);
-	NavDirType OppositeDirection(NavDirType Dir);
 	bool GetGroundHeight(const Vector &pos, float *height, Vector *normal);
 	CJob* GenerateQueue(JobInfo_t *info);
 	void FullGeneration(bool *abort);
 	void ResetGeneration();
 	void SetupMaxDistance(const Vector &Pos, int MaxDistance);
-	void AddWalkableSeed(const Vector &Pos, const Vector &Normal);
-	void ClearWalkableSeeds();
-	Node *GetNextWalkableSeedNode();
+
+	void AddGroundSeed(const Vector &pos, const Vector &normal);
+	void AddAirSeed(const Vector &pos);
+	void ClearGroundSeeds();
+	void ClearAirSeeds();
+	Node* GetNextGroundSeedNode();
+	Node* GetNextAirSeedNode();
+
 	bool SampleStep();
 	bool IsGenerated();
 	bool Save(const char *Filename);
@@ -85,6 +104,7 @@ public:
 private:
 	bool Generated;
 	bool Generating;
+	bool generatingGround;
 
 	Vector StartPos;
 	Vector addVector;
@@ -104,9 +124,8 @@ private:
 	FileHandle_t fh;
 #endif
 
-	NavDirType GenerationDir;
-
-	Node *CurrentNode;
+	NavDirType generationDir;
+	Node *currentNode;
 
 	Vector Origin;
 	int GenerationMaxDistance;
@@ -121,14 +140,11 @@ private:
 	int Heuristic;
 	int HeuristicRef;
 
-	int SeedIndex;
-	struct WalkableSeedSpot
-	{
-		Vector Pos;
-		Vector Normal;
-	};
+	int groundSeedIndex;
+	int airSeedIndex;
 
-	CUtlLinkedList<WalkableSeedSpot, int> WalkableSeedList;
+	CUtlLinkedList<GroundSeedSpot, int> groundSeedList;
+	CUtlLinkedList<AirSeedSpot, int> airSeedList;
 };
 
 

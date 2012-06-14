@@ -120,6 +120,14 @@ LUA_FUNCTION(nav_Poll)
 		if(info->job->IsFinished())
 		{
 			Lua()->PushReference(info->funcRef);
+
+			if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
+			{
+				//Lua()->ErrorNoHalt("type isn't a func? %d", info->funcRef);
+				continue;
+			}
+			//Lua()->ErrorNoHalt("func? %d", info->funcRef);
+
 			PushNav(L, info->nav);
 
 			if(info->findPath)
@@ -244,22 +252,41 @@ LUA_FUNCTION(Nav_SetupMaxDistance)
 	return 0;
 }
 
-LUA_FUNCTION(Nav_AddWalkableSeed)
+LUA_FUNCTION(Nav_AddGroundSeed)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 	Lua()->CheckType(3, GLua::TYPE_VECTOR);
 
-	GetNav(L, 1)->AddWalkableSeed(GMOD_GetVector(L, 2), GMOD_GetVector(L, 3));
+	GetNav(L, 1)->AddGroundSeed(GMOD_GetVector(L, 2), GMOD_GetVector(L, 3));
 
 	return 0;
 }
 
-LUA_FUNCTION(Nav_ClearWalkableSeeds)
+LUA_FUNCTION(Nav_AddAirSeed)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_VECTOR);
+
+	GetNav(L, 1)->AddAirSeed(GMOD_GetVector(L, 2));
+
+	return 0;
+}
+
+LUA_FUNCTION(Nav_ClearGroundSeeds)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	GetNav(L, 1)->ClearWalkableSeeds();
+	GetNav(L, 1)->ClearGroundSeeds();
+
+	return 0;
+}
+
+LUA_FUNCTION(Nav_ClearAirSeeds)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+
+	GetNav(L, 1)->ClearAirSeeds();
 
 	return 0;
 }
@@ -320,6 +347,7 @@ LUA_FUNCTION(Nav_FullGeneration)
 
 	return 1;
 }
+
 LUA_FUNCTION(Nav_IsGenerated)
 {
 	Lua()->CheckType(1, NAV_TYPE);
@@ -752,10 +780,10 @@ LUA_FUNCTION(Node_ConnectTo)
 	NavDirType Dir = (NavDirType)Lua()->GetInteger(3);
 
 	Node1->ConnectTo(Node2, Dir);
-	Node2->ConnectTo(Node1, OppositeDirection(Dir));
+	Node2->ConnectTo(Node1, Nav::OppositeDirection(Dir));
 
 	Node1->MarkAsVisited(Dir);
-	Node1->MarkAsVisited(OppositeDirection(Dir));
+	Node1->MarkAsVisited(Nav::OppositeDirection(Dir));
 
 	Node2->MarkAsVisited(Dir);
 
@@ -774,7 +802,7 @@ LUA_FUNCTION(Node_RemoveConnection)
 	if(Node2 != NULL)
 	{
 		Node1->ConnectTo(NULL, Dir);
-		Node2->ConnectTo(NULL, OppositeDirection(Dir));
+		Node2->ConnectTo(NULL, Nav::OppositeDirection(Dir));
 
 		// UnMarkAsVisited?
 		// I don't really know bitwise too well
@@ -920,8 +948,15 @@ int Init(lua_State* L)
 			NavIndex->SetMember("GetNodeByID", Nav_GetNodeByID);
 			NavIndex->SetMember("GetNodes", Nav_GetNodes);
 			NavIndex->SetMember("GetNodeTotal", Nav_GetNodeTotal);
-			NavIndex->SetMember("AddWalkableSeed", Nav_AddWalkableSeed);
-			NavIndex->SetMember("ClearWalkableSeeds", Nav_ClearWalkableSeeds);
+
+			NavIndex->SetMember("AddWalkableSeed", Nav_AddGroundSeed); // TODO: Remove
+			NavIndex->SetMember("AddGroundSeed", Nav_AddGroundSeed);
+			NavIndex->SetMember("AddAirSeed", Nav_AddAirSeed);
+
+			NavIndex->SetMember("ClearWalkableSeeds", Nav_ClearGroundSeeds); // TODO: Remove
+			NavIndex->SetMember("ClearGroundSeeds", Nav_ClearGroundSeeds);
+			NavIndex->SetMember("ClearAirSeeds", Nav_ClearAirSeeds);
+
 			NavIndex->SetMember("SetupMaxDistance", Nav_SetupMaxDistance);
 			NavIndex->SetMember("Generate", Nav_Generate);
 			NavIndex->SetMember("FullGeneration", Nav_FullGeneration);
@@ -955,6 +990,7 @@ int Init(lua_State* L)
 		ILuaObject *NodeIndex = Lua()->GetNewTable();
 			NodeIndex->SetMember("GetID", Node_GetID);
 			NodeIndex->SetMember("GetPosition", Node_GetPosition);
+			NodeIndex->SetMember("GetPos", Node_GetPosition);
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
 			NodeIndex->SetMember("IsConnected", Node_IsConnected);

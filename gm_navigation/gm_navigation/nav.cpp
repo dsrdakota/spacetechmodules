@@ -24,10 +24,9 @@ Nav::Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int G
 	SetDiagonal(false);
 	SetGridSize(GridSize);
 
-	// I don't believe this is required but I will leave this here for now.
-	// I wanted to make sure that enough memory is reserved but doesn't it dynamically expand
 	Nodes.EnsureCapacity(10240);
-	WalkableSeedList.EnsureCapacity(16);
+	groundSeedList.EnsureCapacity(16);
+	airSeedList.EnsureCapacity(16);
 
 	this->threadPool = threadPool;
 
@@ -63,6 +62,29 @@ Nav::~Nav()
 
 		fs->FPrintf(fh, "Freed Nodes\n");
 #endif
+}
+
+NavDirType Nav::OppositeDirection(NavDirType Dir)
+{
+	switch(Dir)
+	{
+		case NORTH: return SOUTH;
+		case SOUTH: return NORTH;
+		case EAST:	return WEST;
+		case WEST:	return EAST;
+		case NORTHEAST: return SOUTHWEST;
+		case NORTHWEST: return SOUTHEAST;
+		case SOUTHEAST:	return NORTHWEST;
+		case SOUTHWEST: return NORTHEAST;
+		case UP: return DOWN;
+		case DOWN: return UP;
+		case LEFT:	return RIGHT;
+		case RIGHT:	return LEFT;
+		case FORWARD: return BACKWARD;
+		case BACKWARD: return FORWARD;
+	}
+
+	return NORTH;
 }
 
 void Nav::SetGridSize(int GridSize)
@@ -142,7 +164,7 @@ Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node
 		if(UseNew)
 		{
 			// new node becomes current node
-			CurrentNode = node;
+			currentNode = node;
 		}
 	}
 
@@ -218,23 +240,6 @@ float Nav::Round(float Val, float Unit)
 {
 	Val = Val + ((Val < 0.0f) ? -Unit*0.5f : Unit*0.5f);
 	return (float)(Unit * ((int)Val) / (int)Unit);
-}
-
-NavDirType Nav::OppositeDirection(NavDirType Dir)
-{
-	switch(Dir)
-	{
-		case NORTH: return SOUTH;
-		case SOUTH: return NORTH;
-		case EAST:	return WEST;
-		case WEST:	return EAST;
-		case NORTHEAST: return SOUTHWEST;
-		case NORTHWEST: return SOUTHEAST;
-		case SOUTHEAST:	return NORTHWEST;
-		case SOUTHWEST: return NORTHEAST;
-	}
-
-	return NORTH;
 }
 
 bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
@@ -341,11 +346,13 @@ void Nav::FullGeneration(bool *abort)
 
 void Nav::ResetGeneration()
 {
-	SeedIndex = 0;
-	CurrentNode = NULL;
+	groundSeedIndex = 0;
+	airSeedIndex = 0;
+	currentNode = NULL;
 
 	Generating = true;
 	Generated = false;
+	generatingGround = true;
 
 	Nodes.RemoveAll();
 }
@@ -356,28 +363,38 @@ void Nav::SetupMaxDistance(const Vector &Pos, int MaxDistance)
 	GenerationMaxDistance = MaxDistance;
 }
 
-void Nav::AddWalkableSeed(const Vector &Pos, const Vector &Normal)
+void Nav::AddGroundSeed(const Vector &pos, const Vector &normal)
 {
-	WalkableSeedSpot Seed;
-
-	Seed.Pos = SnapToGrid(Pos);
-	Seed.Normal = Normal;
-
-	WalkableSeedList.AddToTail(Seed);
+	GroundSeedSpot seed;
+	seed.pos = SnapToGrid(pos);
+	seed.normal = normal;
+	groundSeedList.AddToTail(seed);
 }
 
-void Nav::ClearWalkableSeeds()
+void Nav::AddAirSeed(const Vector &pos)
 {
-	WalkableSeedList.RemoveAll();
+	AirSeedSpot seed;
+	seed.pos = SnapToGrid(pos);
+	airSeedList.AddToTail(seed);
 }
 
-Node *Nav::GetNextWalkableSeedNode()
+void Nav::ClearGroundSeeds()
+{
+	groundSeedList.RemoveAll();
+}
+
+void Nav::ClearAirSeeds()
+{
+	airSeedList.RemoveAll();
+}
+
+Node* Nav::GetNextGroundSeedNode()
 {
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextWalkableSeedNode: %i\n", SeedIndex);
+	fs->FPrintf(fh, "GetNextGroundSeedNode: %i\n", groundSeedIndex);
 #endif
 
-	if(SeedIndex == -1)
+	if(groundSeedIndex == -1)
 	{
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Invalid Seed Index 1\n");
@@ -385,7 +402,7 @@ Node *Nav::GetNextWalkableSeedNode()
 		return NULL;
 	}
 
-	if(!WalkableSeedList.IsValidIndex(SeedIndex))
+	if(!groundSeedList.IsValidIndex(groundSeedIndex))
 	{
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Invalid Seed Index 2\n");
@@ -394,37 +411,37 @@ Node *Nav::GetNextWalkableSeedNode()
 	}
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextWalkableSeedNode: Continuing 1\n");
+	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 1\n");
 #endif
 
-	WalkableSeedSpot Spot = WalkableSeedList.Element(SeedIndex);
+	GroundSeedSpot spot = groundSeedList.Element(groundSeedIndex);
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextWalkableSeedNode: Continuing 2\n");
+	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 2\n");
 #endif
 
-	SeedIndex = WalkableSeedList.Next(SeedIndex);
+	groundSeedIndex = groundSeedList.Next(groundSeedIndex);
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextWalkableSeedNode: Continuing 3\n");
+	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 3\n");
 #endif
 
-	if(GetNode(Spot.Pos) == NULL)
+	if(GetNode(spot.pos) == NULL)
 	{
 		if(GenerationMaxDistance > 0)
 		{
-			if(Origin.DistTo(Spot.Pos) > GenerationMaxDistance)
+			if(Origin.DistTo(spot.pos) > GenerationMaxDistance)
 			{
 #ifdef FILEBUG
-				fs->FPrintf(fh, "GetNextWalkableSeedNode: Skipping Seed\n");
+				fs->FPrintf(fh, "GetNextGroundSeedNode: Skipping Seed\n");
 #endif
-				return GetNextWalkableSeedNode();
+				return GetNextGroundSeedNode();
 			}
 		}
 #ifdef FILEBUG
-		fs->FPrintf(fh, "GetNextWalkableSeedNode: Adding Node\n");
+		fs->FPrintf(fh, "GetNextGroundSeedNode: Adding Node\n");
 #endif
-		Node *node = new Node(Spot.Pos, Spot.Normal, NULL);
+		Node *node = new Node(spot.pos, spot.normal, NULL);
 		node->SetID(Nodes.AddToTail(node));
 		return node;
 	}
@@ -433,7 +450,40 @@ Node *Nav::GetNextWalkableSeedNode()
 	fs->FPrintf(fh, "GetNextWalkableSeedNode: Next Seed\n");
 #endif
 
-	return GetNextWalkableSeedNode();
+	return GetNextGroundSeedNode();
+}
+
+Node *Nav::GetNextAirSeedNode()
+{
+	if(airSeedIndex == -1)
+	{
+		return NULL;
+	}
+
+	if(!airSeedList.IsValidIndex(airSeedIndex))
+	{
+		return NULL;
+	}
+
+	AirSeedSpot spot = airSeedList.Element(airSeedIndex);
+
+	airSeedIndex = airSeedList.Next(airSeedIndex);
+
+	if(GetNode(spot.pos) == NULL)
+	{
+		if(GenerationMaxDistance > 0)
+		{
+			if(Origin.DistTo(spot.pos) > GenerationMaxDistance)
+			{
+				return GetNextAirSeedNode();
+			}
+		}
+		Node *node = new Node(spot.pos, vector_origin, NULL);
+		node->SetID(Nodes.AddToTail(node));
+		return node;
+	}
+
+	return GetNextAirSeedNode();
 }
 
 bool Nav::SampleStep()
@@ -448,18 +498,17 @@ bool Nav::SampleStep()
 		return true;
 	}
 
-	// take a step
-	while(true)
+	// take a ground step
+	while(generatingGround)
 	{
-		if(CurrentNode == NULL)
+		if(currentNode == NULL)
 		{
-			CurrentNode = GetNextWalkableSeedNode();
+			currentNode = GetNextGroundSeedNode();
 
-			if(CurrentNode == NULL)
+			if(currentNode == NULL)
 			{
-				Generated = true;
-				Generating = false;
-				return true;
+				generatingGround = false;
+				break;
 			}
 		}
 
@@ -470,26 +519,26 @@ bool Nav::SampleStep()
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Stepping From Node\n");
 #endif
-		for(int Dir = NORTH; Dir < NumDir; Dir++)
+		for(int dir = NORTH; dir < NumDir; dir++)
 		{
 #ifdef FILEBUG
 			fs->FPrintf(fh, "Checking Direction: %i\n", Dir);
 #endif
-			if(!CurrentNode->HasVisited((NavDirType)Dir))
+			if(!currentNode->HasVisited((NavDirType)dir))
 			{
 				// have not searched in this direction yet
 
 #ifdef FILEBUG
-				fs->FPrintf(fh, "Unsearched Direction: %i\n", Dir);
+				fs->FPrintf(fh, "Unsearched Direction: %i\n", dir);
 #endif
 
 				// start at current node position
-				Vector Pos = *CurrentNode->GetPosition();
+				Vector Pos = *currentNode->GetPosition();
 
 #ifdef FILEBUG
 				fs->FPrintf(fh, "1 <%f, %f>\n", Pos.x, Pos.y);
 #endif
-				switch(Dir)
+				switch(dir)
 				{
 					case NORTH:	Pos.y += GenerationStepSize; break;
 					case SOUTH:	Pos.y -= GenerationStepSize; break;
@@ -505,10 +554,10 @@ bool Nav::SampleStep()
 				fs->FPrintf(fh, "2 <%f, %f>\n\n", Pos.x, Pos.y);
 #endif
 
-				GenerationDir = (NavDirType)Dir;
+				generationDir = (NavDirType)dir;
 
 				// mark direction as visited
-				CurrentNode->MarkAsVisited(GenerationDir);
+				currentNode->MarkAsVisited(generationDir);
 
 				// test if we can move to new position
 				Vector to;
@@ -527,7 +576,7 @@ bool Nav::SampleStep()
 					return false;
 				}
 
-				Vector from = *CurrentNode->GetPosition();
+				Vector from = *currentNode->GetPosition();
 
 				Vector fromOrigin = from + addVector;
 				Vector toOrigin = to + addVector;
@@ -616,7 +665,7 @@ bool Nav::SampleStep()
 
 				if(walkable)
 				{
-					AddNode(to, toNormal, GenerationDir, CurrentNode);
+					AddNode(to, toNormal, generationDir, currentNode);
 				}
 
 				return false;
@@ -624,8 +673,69 @@ bool Nav::SampleStep()
 		}
 
 		// all directions have been searched from this node - pop back to its parent and continue
-		CurrentNode = CurrentNode->GetParent();
+		currentNode = currentNode->GetParent();
 	}
+
+	// Step through air
+	while(true)
+	{
+		if(currentNode == NULL)
+		{
+			currentNode = GetNextAirSeedNode();
+			//Msg("GetNextAirSeedNode\n");
+			if(currentNode == NULL)
+			{
+				break;
+			}
+		}
+
+		for(int dir = UP; dir < NUM_DIRECTIONS_MAX; dir++) // UP to the end!
+		{
+			if(!currentNode->HasVisited((NavDirType)dir))
+			{
+				// start at current node position
+				Vector pos = *currentNode->GetPosition();
+
+				switch(dir)
+				{
+					case UP:		pos.z += GenerationStepSize; break;
+					case DOWN:		pos.z -= GenerationStepSize; break;
+					case LEFT:		pos.x -= GenerationStepSize; break;
+					case RIGHT:		pos.x += GenerationStepSize; break;
+					case FORWARD:	pos.y += GenerationStepSize; break;
+					case BACKWARD:	pos.y -= GenerationStepSize; break;
+				}
+
+				generationDir = (NavDirType)dir;
+				currentNode->MarkAsVisited(generationDir);
+				
+				// Trace from the current node to the pos (Check if we hit anything)
+				trace_t result;
+
+				GMU->TraceLine(*currentNode->GetPosition(), pos, Mask, &result);
+
+				if(!result.DidHit())
+				{
+					//Msg("added node\n");
+					AddNode(pos, vector_origin, generationDir, currentNode);
+				}
+
+				//Msg("HasVisited: %d %d\n", currentNode->GetID(), dir);
+
+				return false;
+			}
+		}
+
+		// all directions have been searched from this node - pop back to its parent and continue
+		currentNode = currentNode->GetParent();
+
+		//Msg("back to parent\n");
+	}
+
+	Generated = true;
+	Generating = false;
+
+	return true;
 }
 
 bool Nav::Save(const char *Filename)
@@ -641,6 +751,9 @@ bool Nav::Save(const char *Filename)
 
 	int TotalConnections = 0;
 	int NodeTotal = Nodes.Count();
+
+	// Save current nav file version
+	// buf.PutInt(NAV_VERSION);
 
 	//////////////////////////////////////////////
 	// Nodes
@@ -658,7 +771,7 @@ bool Nav::Save(const char *Filename)
 		buf.PutFloat(node->Normal.y);
 		buf.PutFloat(node->Normal.z);
 
-		for(int Dir = NORTH; Dir < NumDir; Dir++)
+		for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 		{
 			if(node->GetConnectedNode((NavDirType)Dir) != NULL)
 			{
@@ -675,7 +788,7 @@ bool Nav::Save(const char *Filename)
 	for(int i = 0; i < NodeTotal; i++)
 	{
 		node = Nodes[i];
-		for(int Dir = NORTH; Dir < NumDir; Dir++)
+		for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 		{
 			connection = node->GetConnectedNode((NavDirType)Dir);
 			if(connection != NULL)
@@ -724,6 +837,8 @@ bool Nav::Load(const char *Filename)
 	int Dir, SrcID, DestID;
 
 	Nodes.RemoveAll();
+
+	//int fileVersion = buf.GetInt();
 
 	//////////////////////////////////////////////
 	// Nodes
@@ -893,7 +1008,7 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 	fs->FPrintf(fh, "Added Node\n");
 #endif
 
-	while(true && !info->abort)
+	while(!info->abort)
 	{
 		current = FindLowestF();
 
@@ -913,7 +1028,7 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 
 			currentScoreG = current->GetScoreG();
 
-			for(int Dir = NORTH; Dir < NumDir; Dir++)
+			for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++) // NumDir
 			{
 				connection = current->GetConnectedNode((NavDirType)Dir);
 
