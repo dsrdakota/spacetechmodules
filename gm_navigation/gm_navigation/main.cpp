@@ -932,6 +932,13 @@ int Init(lua_State* L)
 		navTable->SetMember("SOUTHEAST", (float)SOUTHEAST);
 		navTable->SetMember("SOUTHWEST", (float)SOUTHWEST);
 
+		navTable->SetMember("UP", (float)UP);
+		navTable->SetMember("DOWN", (float)DOWN);
+		navTable->SetMember("LEFT", (float)LEFT);
+		navTable->SetMember("RIGHT", (float)RIGHT);
+		navTable->SetMember("FORWARD", (float)FORWARD);
+		navTable->SetMember("BACKWARD", (float)BACKWARD);
+
 		navTable->SetMember("NUM_DIRECTIONS", (float)NUM_DIRECTIONS);
 		navTable->SetMember("NUM_DIRECTIONS_DIAGONAL", (float)NUM_DIRECTIONS_DIAGONAL);
 		navTable->SetMember("NUM_DIRECTIONS_MAX", (float)NUM_DIRECTIONS_MAX);
