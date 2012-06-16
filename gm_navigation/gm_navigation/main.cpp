@@ -177,6 +177,10 @@ LUA_FUNCTION(nav_Poll)
 				info->updateTime = now;
 
 				Lua()->PushReference(info->updateRef);
+				if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
+				{
+					continue;
+				}
 				PushNav(L, info->nav);
 				Lua()->Push((float)info->nav->GetNodes().Size());
 				Lua()->Call(2);
