@@ -3,7 +3,7 @@
     By Spacetech
 */ 
 
-#include <gmodinterface/gmluamodule.h>
+#include "gmluamodule.h"
 #include <interface.h>
 #include "eiface.h"
 #include "inetchannelinfo.h"

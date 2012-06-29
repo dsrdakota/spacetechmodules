@@ -35,7 +35,7 @@
       <Optimization>MinSpace</Optimization>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>C:/Programming/Garrysmod/src;C:/Programming/Garrysmod/src/common;C:/Programming/Garrysmod/src/common/xbox;C:/Programming/Garrysmod/src/public;C:/Programming/Garrysmod/src/public/tier0;C:/Programming/Garrysmod/src/public/tier1;C:/Programming/Garrysmod/src/public/tier2;C:/Programming/Garrysmod/src/public/tier3;C:/Programming/Garrysmod/src/game/client;C:/Programming/Garrysmod/src/game/shared;C:/Programming/Garrysmod/src/game/server;C:/Programming/Garrysmod/src/utils/common;C:/Programming/Garrysmod/src/dlls;C:/Programming/Garrysmod/src/dlls/hl2_dll;C:/Programming/Garrysmod/src/episodic;C:/Programming/Garrysmod/src/gmodinterface;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Programming\hl2sdk-ob-valve;C:\Programming\hl2sdk-ob-valve/common;C:\Programming\hl2sdk-ob-valve/common/xbox;C:\Programming\hl2sdk-ob-valve/public;C:\Programming\hl2sdk-ob-valve/public/tier0;C:\Programming\hl2sdk-ob-valve/public/tier1;C:\Programming\hl2sdk-ob-valve/src/public/tier2;C:\Programming\hl2sdk-ob-valve/public/tier3;C:\Programming\hl2sdk-ob-valve/game/client;C:\Programming\hl2sdk-ob-valve/game/shared;C:\Programming\hl2sdk-ob-valve/game/server;C:\Programming\hl2sdk-ob-valve/src/utils/common;C:\Programming\hl2sdk-ob-valve/src/dlls;C:\Programming\hl2sdk-ob-valve/src/dlls/hl2_dll;C:\Programming\hl2sdk-ob-valve/src/episodic;C:\Programming\Garrysmod\Azuisleet Modules\secretheaders;C:\Programming\hl2sdk-ob-valve\public\vstdlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
@@ -50,8 +50,8 @@
     </ProjectReference>
     <Link>
       <AdditionalDependencies>mathlib.lib;tier0.lib;tier1.lib;tier2.lib;tier3.lib;vstdlib.lib;raytrace.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <ShowProgress>LinkVerboseLib</ShowProgress>
-      <AdditionalLibraryDirectories>..\lib\public;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <ShowProgress>NotSet</ShowProgress>
+      <AdditionalLibraryDirectories>C:\Programming\hl2sdk-ob-valve\lib\public;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
