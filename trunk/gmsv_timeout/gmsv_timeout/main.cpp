@@ -57,7 +57,14 @@ LUA_FUNCTION(IsTimingOut)
 	if(EntIndex > 0)
 	{
 		INetChannelInfo *pInfo = engine->GetPlayerNetInfo(EntIndex);
-		Lua()->Push((bool)pInfo->IsTimingOut());
+		if(pInfo != NULL)
+		{
+			Lua()->Push((bool)pInfo->IsTimingOut());
+		}
+		else
+		{
+			Lua()->PushNil();
+		}
 	}
 	else
 	{
@@ -76,7 +83,14 @@ LUA_FUNCTION(GetTimeSinceLastReceived)
 	if(EntIndex > 0)
 	{
 		INetChannelInfo *pInfo = engine->GetPlayerNetInfo(EntIndex);
-		Lua()->Push((float)pInfo->GetTimeSinceLastReceived());
+		if(pInfo != NULL)
+		{
+			Lua()->Push((float)pInfo->GetTimeSinceLastReceived());
+		}
+		else
+		{
+			Lua()->PushNil();
+		}
 	}
 	else
 	{
