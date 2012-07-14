@@ -837,9 +837,16 @@ factorylist_t GetFactories(lua_State* L)
 		Lua()->Error("Could not get access to factories.");
 	}
 
+	// 7/14/2012 - Updated signature for garrysmod beta
 	CSigScan sigscanFactories;
-	sigscanFactories.Init((unsigned char *)"\x8B\x44\x24\x04\x8B\x0D\xC0\x33\x6D\x10\x8B\x15\xC4\x33\x6D\x10\x89\x08\x8B\x0D\xC8\x33\x6D\x10\x89\x50\x04\x89\x48\x08\xC3", "xxxxxx????xx????xxxx????xxxxxxx", 31);
+	sigscanFactories.Init((unsigned char *)"\x55\x8B\xEC\x8B\x45\x08\x8B\x0D\x1C\xE7\xFE\x1B\x8B\x15\x20\xE7\xFE\x1B\x89\x08\x8B\x0D\x24\xE7\xFE\x1B\x89\x50\x04\x89\x48\x08\x5D\xC3", "xxxxxxxx????xx????xxxx????xxxxxxxx", 34);
 
+	if(!sigscanFactories.is_set)
+	{
+		Msg("GetFactories: Could not get access to factories, falling back to original signature\n");
+		sigscanFactories.Init((unsigned char *)"\x8B\x44\x24\x04\x8B\x0D\xC0\x33\x6D\x10\x8B\x15\xC4\x33\x6D\x10\x89\x08\x8B\x0D\xC8\x33\x6D\x10\x89\x50\x04\x89\x48\x08\xC3", "xxxxxx????xx????xxxx????xxxxxxx", 31);
+	}
+	
 	if(!sigscanFactories.is_set)
 	{
 		Lua()->Error("Could not get access to factories.");
@@ -888,7 +895,6 @@ int Init(lua_State* L)
 
 	CreateInterfaceFn fsFactory;
 
-	// This check probably isn't needed
 	if(Lua()->IsDedicatedServer())
 	{
 		fsFactory = GetFactories(L).fileSystemFactory;
