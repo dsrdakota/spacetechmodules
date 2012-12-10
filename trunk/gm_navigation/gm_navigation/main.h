@@ -14,8 +14,6 @@
 #include "node.h"
 #include "nav.h"
 
-#include "gmutility.h"
-
 typedef CUtlVector<Node*> NodeList_t;
 
 CUtlVector<JobInfo_t*> JobQueue;
