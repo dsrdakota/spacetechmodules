@@ -5,9 +5,8 @@
 
 #include "nav.h"
 
-Nav::Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int GridSize)
+Nav::Nav(IThreadPool *threadPool, IFileSystem *filesystem, int GridSize)
 {
-	GMU = gmu;
 	fs = filesystem;
 
 	Heuristic = HEURISTIC_MANHATTAN;
@@ -31,26 +30,26 @@ Nav::Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int G
 	this->threadPool = threadPool;
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
-
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
 	fs->FPrintf(fh, "Created Nav\n");
+	fs->Close(fh);
 #endif
 }
 
 Nav::~Nav()
 {
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
-
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
 	fs->FPrintf(fh, "Deconstructing Nav\n");
+	fs->Close(fh);
 #endif
 	
 	Msg("Deconstructing Nav!?\n");
 
 #ifdef FILEBUG
-		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
-
-		fs->FPrintf(fh, "Freeing Nodes\n");
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "Freeing Nodes\n");
+	fs->Close(fh);
 #endif
 
 	Nodes.PurgeAndDeleteElements();
@@ -58,9 +57,9 @@ Nav::~Nav()
    // Closed.PurgeAndDeleteElements();
 
 #ifdef FILEBUG
-		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
-
-		fs->FPrintf(fh, "Freed Nodes\n");
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "Freed Nodes\n");
+	fs->Close(fh);
 #endif
 }
 
@@ -268,7 +267,8 @@ bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
 	{
 		from = pos + Vector( 0, 0, offset );
 
-		GMU->TraceLine( from, to, Mask, &result);
+		//GMU->TraceLine( from, to, Mask, &result);
+		UTIL_TraceLine_GMOD(from, to, Mask, &result);
 
 		// if the trace came down thru a door, ignore the door and try again
 		// also ignore breakable floors
@@ -320,17 +320,37 @@ CJob* Nav::GenerateQueue(JobInfo_t *info)
 		return NULL;
 	}
 
+#ifdef FILEBUG
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "GenerateQueue 1\n");
+	fs->Close(fh);
+#endif
+
 	ResetGeneration();
 
-	return threadPool->QueueCall(this, &Nav::FullGeneration, &info->abort);
+#ifdef FILEBUG
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "GenerateQueue 2\n");
+	fs->Close(fh);
+#endif
+
+	CJob* j = threadPool->QueueCall(this, &Nav::FullGeneration, &info->abort);
+
+#ifdef FILEBUG
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "Created Job\n");
+	fs->Close(fh);
+#endif
+
+	return j;
 }
 
 void Nav::FullGeneration(bool *abort)
 {
 #ifdef FILEBUG
-		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
-
-		fs->FPrintf(fh, "FullGeneration Start\n");
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "FullGeneration Start\n");
+	fs->Close(fh);
 #endif
 
 	while(!SampleStep() && *abort == false)
@@ -338,9 +358,9 @@ void Nav::FullGeneration(bool *abort)
 	}
 
 #ifdef FILEBUG
-		fh = fs->Open("data/nav/filebug.txt", "wb", "MOD");
-
-		fs->FPrintf(fh, "FullGeneration End\n");
+	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
+	fs->FPrintf(fh, "FullGeneration End\n");
+	fs->Close(fh);
 #endif
 }
 
@@ -392,12 +412,14 @@ Node* Nav::GetNextGroundSeedNode()
 {
 #ifdef FILEBUG
 	fs->FPrintf(fh, "GetNextGroundSeedNode: %i\n", groundSeedIndex);
+	fs->Flush(fh);
 #endif
 
 	if(groundSeedIndex == -1)
 	{
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Invalid Seed Index 1\n");
+		fs->Flush(fh);
 #endif
 		return NULL;
 	}
@@ -406,24 +428,28 @@ Node* Nav::GetNextGroundSeedNode()
 	{
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Invalid Seed Index 2\n");
+		fs->Flush(fh);
 #endif
 		return NULL;
 	}
 
 #ifdef FILEBUG
 	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 1\n");
+	fs->Flush(fh);
 #endif
 
 	GroundSeedSpot spot = groundSeedList.Element(groundSeedIndex);
 
 #ifdef FILEBUG
 	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 2\n");
+	fs->Flush(fh);
 #endif
 
 	groundSeedIndex = groundSeedList.Next(groundSeedIndex);
 
 #ifdef FILEBUG
 	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 3\n");
+	fs->Flush(fh);
 #endif
 
 	if(GetNode(spot.pos) == NULL)
@@ -434,12 +460,14 @@ Node* Nav::GetNextGroundSeedNode()
 			{
 #ifdef FILEBUG
 				fs->FPrintf(fh, "GetNextGroundSeedNode: Skipping Seed\n");
+				fs->Flush(fh);
 #endif
 				return GetNextGroundSeedNode();
 			}
 		}
 #ifdef FILEBUG
 		fs->FPrintf(fh, "GetNextGroundSeedNode: Adding Node\n");
+		fs->Flush(fh);
 #endif
 		Node *node = new Node(spot.pos, spot.normal, NULL);
 		node->SetID(Nodes.AddToTail(node));
@@ -448,6 +476,7 @@ Node* Nav::GetNextGroundSeedNode()
 
 #ifdef FILEBUG
 	fs->FPrintf(fh, "GetNextWalkableSeedNode: Next Seed\n");
+	fs->Flush(fh);
 #endif
 
 	return GetNextGroundSeedNode();
@@ -518,11 +547,13 @@ bool Nav::SampleStep()
 
 #ifdef FILEBUG
 		fs->FPrintf(fh, "Stepping From Node\n");
+		fs->Flush(fh);
 #endif
 		for(int dir = NORTH; dir < NumDir; dir++)
 		{
 #ifdef FILEBUG
-			fs->FPrintf(fh, "Checking Direction: %i\n", Dir);
+			fs->FPrintf(fh, "Checking Direction: %i\n", dir);
+			fs->Flush(fh);
 #endif
 			if(!currentNode->HasVisited((NavDirType)dir))
 			{
@@ -530,6 +561,7 @@ bool Nav::SampleStep()
 
 #ifdef FILEBUG
 				fs->FPrintf(fh, "Unsearched Direction: %i\n", dir);
+				fs->Flush(fh);
 #endif
 
 				// start at current node position
@@ -537,6 +569,7 @@ bool Nav::SampleStep()
 
 #ifdef FILEBUG
 				fs->FPrintf(fh, "1 <%f, %f>\n", Pos.x, Pos.y);
+				fs->Flush(fh);
 #endif
 				switch(dir)
 				{
@@ -552,6 +585,7 @@ bool Nav::SampleStep()
 
 #ifdef FILEBUG
 				fs->FPrintf(fh, "2 <%f, %f>\n\n", Pos.x, Pos.y);
+				fs->Flush(fh);
 #endif
 
 				generationDir = (NavDirType)dir;
@@ -572,6 +606,7 @@ bool Nav::SampleStep()
 				{
 #ifdef FILEBUG
 					fs->FPrintf(fh, "Ground Height Fail\n");
+					fs->Flush(fh);
 #endif
 					return false;
 				}
@@ -583,7 +618,8 @@ bool Nav::SampleStep()
 
 				trace_t result;
 
-				GMU->TraceLine(fromOrigin, toOrigin, Mask, &result);
+				//GMU->TraceLine(fromOrigin, toOrigin, Mask, &result);
+				UTIL_TraceLine_GMOD(fromOrigin, toOrigin, Mask, &result);
 
 				bool walkable;
 
@@ -603,6 +639,7 @@ bool Nav::SampleStep()
 						walkable = false;
 #ifdef FILEBUG
 						fs->FPrintf(fh, "Bad Ledge\n");
+						fs->Flush(fh);
 #endif
 					}
 					else
@@ -637,6 +674,7 @@ bool Nav::SampleStep()
 								walkable = false;
 #ifdef FILEBUG
 								fs->FPrintf(fh, "Bad Node Path\n");
+								fs->Flush(fh);
 #endif
 								break;
 							}
@@ -647,6 +685,7 @@ bool Nav::SampleStep()
 								walkable = false;
 #ifdef FILEBUG
 								fs->FPrintf(fh, "Slope\n");
+								fs->Flush(fh);
 #endif
 								break;
 							}
@@ -660,6 +699,7 @@ bool Nav::SampleStep()
 					walkable = false;
 #ifdef FILEBUG
 					fs->FPrintf(fh, "Hit Something\n");
+					fs->Flush(fh);
 #endif
 				}
 
@@ -712,7 +752,8 @@ bool Nav::SampleStep()
 				// Trace from the current node to the pos (Check if we hit anything)
 				trace_t result;
 
-				GMU->TraceLine(*currentNode->GetPosition(), pos, Mask, &result);
+				//GMU->TraceLine(*currentNode->GetPosition(), pos, Mask, &result);
+				UTIL_TraceLine_GMOD(*currentNode->GetPosition(), pos, Mask, &result);
 
 				if(!result.DidHit())
 				{
@@ -804,7 +845,7 @@ bool Nav::Save(const char *Filename)
 	//////////////////////////////////////////////
 	// Write File
 
-	FileHandle_t fh = fs->Open(Filename, "wb");
+	FileHandle_t fh = fs->Open(Filename, "a+");
 	if(!fh)
 	{
 		return false;
@@ -1046,6 +1087,7 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 
 				if(!connection->IsOpened() || scoreG < connection->GetScoreG())
 				{
+					/*
 					if(info->hull)
 					{
 						trace_t result;
@@ -1055,6 +1097,7 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 							continue;
 						}
 					}
+					*/
 
 					AddOpenedNode(connection);
 					connection->SetStatus(current, scoreG + HeuristicDistance(connection->GetPosition(), end->GetPosition()), scoreG);

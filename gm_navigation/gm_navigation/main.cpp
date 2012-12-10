@@ -7,10 +7,9 @@
 
 GMOD_MODULE(Init, Shutdown);
 
-GMUtility *util = NULL;
 IVEngineServer *engine = NULL;
-IFileSystem *Gfilesystem = NULL;
-IEngineTrace *Genginetrace[2] = {NULL, NULL};
+IFileSystem *filesystem = NULL;
+IEngineTrace *enginetrace = NULL;
 
 int VectorMetaRef = NULL;
 
@@ -24,7 +23,7 @@ ILuaObject* NewVectorObject(lua_State* L, Vector& vec)
 		// @azuisleet Get a reference to the function to survive past 510 calls!
 		ILuaObject *VectorMeta = Lua()->GetGlobal("Vector");
 			VectorMeta->Push();
-			VectorMetaRef = Lua()->GetReference(-1, true);
+			VectorMetaRef = Lua()->GetReference(-1);
 		VectorMeta->UnReference();
 	}
 
@@ -78,7 +77,7 @@ void PushNav(lua_State* L, Nav *nav)
 	if(nav)
 	{
 		ILuaObject* meta = Lua()->GetMetaTable(NAV_NAME, NAV_TYPE);
-			Lua()->PushUserData(meta, nav);
+			Lua()->PushUserData(meta, nav, NAV_TYPE);
 		meta->UnReference();
 	}
 	else
@@ -92,7 +91,7 @@ void PushNode(lua_State* L, Node *node)
 	if(node)
 	{
 		ILuaObject* meta = Lua()->GetMetaTable(NODE_NAME, NODE_TYPE);
-			Lua()->PushUserData(meta, node);
+			Lua()->PushUserData(meta, node, NODE_TYPE);
 		meta->UnReference();
 	}
 	else
@@ -103,17 +102,24 @@ void PushNode(lua_State* L, Node *node)
 
 ///////////////////////////////////////////////
 
+FileHandle_t fh;
+
 LUA_FUNCTION(nav_Create)
 {
 	Lua()->CheckType(1, GLua::TYPE_NUMBER);
 
-	PushNav(L, new Nav(util, threadPool, Gfilesystem, (int)Lua()->GetNumber(1)));
+	PushNav(L, new Nav(threadPool, filesystem, (int)Lua()->GetNumber(1)));
 
 	return 1;
 }
 
 LUA_FUNCTION(nav_Poll)
 {
+#ifdef FILEBUG
+	fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+	filesystem->FPrintf(fh, "Poll 1\n");
+	filesystem->Close(fh);
+#endif
 	for(int i=0; i < JobQueue.Size(); i++)
 	{
 		JobInfo_t* info = JobQueue[i];
@@ -171,9 +177,21 @@ LUA_FUNCTION(nav_Poll)
 		}
 		else if(!info->findPath && info->updateTime > 0)
 		{
+#ifdef FILEBUG
+			fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+			filesystem->FPrintf(fh, "UpdateTime\n");
+			filesystem->Close(fh);
+#endif
+
 			time_t now = time(NULL);
+
 			if(difftime(now, info->updateTime) >= 1)
 			{
+#ifdef FILEBUG
+				fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+				filesystem->FPrintf(fh, "Update 1\n");
+				filesystem->Close(fh);
+#endif
 				Lua()->PushReference(info->updateRef);
 				if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
 				{
@@ -184,9 +202,21 @@ LUA_FUNCTION(nav_Poll)
 				Lua()->Call(2);
 
 				info->updateTime = now;
+
+#ifdef FILEBUG
+				fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+				filesystem->FPrintf(fh, "Update 2\n");
+				filesystem->Close(fh);
+#endif
 			}
 		}
 	}
+
+#ifdef FILEBUG
+	fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+	filesystem->FPrintf(fh, "Poll 2\n");
+	filesystem->Close(fh);
+#endif
 
 	return 0;
 }
@@ -299,7 +329,7 @@ LUA_FUNCTION(Nav_Generate)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_FUNCTION);
-
+	
 	Nav *nav = GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
@@ -330,6 +360,12 @@ LUA_FUNCTION(Nav_Generate)
 	{
 		delete info;
 	}
+
+#ifdef FILEBUG
+	FileHandle_t fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+	filesystem->FPrintf(fh, "Nav_Generate\n");
+	filesystem->Close(fh);
+#endif
 
 	Lua()->Push((bool)(job != NULL));
 
@@ -866,56 +902,38 @@ int Init(lua_State* L)
 {
 	CreateInterfaceFn interfaceFactory = Sys_GetFactory("engine.dll");
 
-	// VEngineServerGMod021
-	// Was INTERFACEVERSION_VENGINESERVER
-	engine = (IVEngineServer*)interfaceFactory("VEngineServerGMod021", NULL);
+	engine = (IVEngineServer*)interfaceFactory(INTERFACEVERSION_VENGINESERVER, NULL);
+
 	if(!engine)
 	{
-		Msg("gm_navigation: Missing IVEngineServer interface, falling back to original interface\n");
-		engine = (IVEngineServer*)interfaceFactory(INTERFACEVERSION_VENGINESERVER, NULL);
-		if(!engine)
-		{
-			Lua()->Error("gm_navigation: Missing IVEngineServer interface.\n");
-		}
+		Lua()->Error("gm_navigation: Missing IVEngineServer interface.\n");
 	}
 
-	if(Lua()->IsClient())
-	{
-		Genginetrace[1] = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_CLIENT, NULL);
-	}
-	else
-	{
-		Genginetrace[0] = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_SERVER, NULL);
-	}
+#ifdef LUA_SERVER
+	enginetrace = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_SERVER, NULL);
+#else
+	enginetrace = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_CLIENT, NULL);
+#endif
 	
-	if(!Genginetrace[(int)Lua()->IsClient()])
+	if(!enginetrace)
 	{
 		Lua()->Error("gm_navigation: Missing IEngineTrace interface.\n");
 	}
 
 	CreateInterfaceFn fsFactory;
 
-	if(Lua()->IsDedicatedServer())
-	{
-		fsFactory = GetFactories(L).fileSystemFactory;
-	}
-	else
-	{
-		fsFactory = Sys_GetFactory("filesystem_steam.dll");
-	}
+	fsFactory = Sys_GetFactory("filesystem_steam.dll");
 
 	if(!fsFactory)
 	{
 		Lua()->Error("gm_navigation: Missing fsFactory\n");
 	}
 
-	Gfilesystem = (IFileSystem*)fsFactory(FILESYSTEM_INTERFACE_VERSION, NULL);
-	if(!Gfilesystem)
+	filesystem = (IFileSystem*)fsFactory(FILESYSTEM_INTERFACE_VERSION, NULL);
+	if(!filesystem)
 	{
 		Lua()->Error("gm_navigation: Missing IFileSystem interface.\n");
 	}
-
-	util = new GMUtility(Genginetrace[(int)Lua()->IsClient()], Lua()->IsServer());
 
 	threadPool = CreateThreadPool();
 
@@ -1022,7 +1040,7 @@ int Init(lua_State* L)
 		NodeIndex->UnReference();
 	MetaNode->UnReference();
 
-	// Base on azuisleet's method.
+	// Based on azuisleet's method.
 	// hook.Add("Think", "NavPoll", nav.Poll)
 	ILuaObject *hook = Lua()->GetGlobal("hook");
 	ILuaObject *add = hook->GetMember("Add");
@@ -1034,7 +1052,11 @@ int Init(lua_State* L)
 	hook->UnReference();
 	add->UnReference();
 
-	Msg("gm_navigation: Loaded\n");
+#ifdef LUA_SERVER
+	Msg("gmsv_navigation_win32: Loaded\n");
+#else
+	Msg("gmcl_navigation_win32: Loaded\n");
+#endif
 
 	return 0;
 }

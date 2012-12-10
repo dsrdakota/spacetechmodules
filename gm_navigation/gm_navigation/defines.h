@@ -6,16 +6,16 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-//#define FILEBUG
+#define FILEBUG
 
 // Version for save files
 #define NAV_VERSION 1
 
 #define NAV_NAME "Nav"
-#define NAV_TYPE 7456
+#define NAV_TYPE 156
 
 #define NODE_NAME "Node"
-#define NODE_TYPE 7457
+#define NODE_TYPE 157
 
 enum NavDirType
 {

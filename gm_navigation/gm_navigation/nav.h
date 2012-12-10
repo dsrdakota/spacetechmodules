@@ -7,13 +7,22 @@
 #define NAV_H
 
 #include "node.h"
-#include "gmutility.h"
 #include "filesystem.h"
 #include "defines.h"
 #include "utlbuffer.h"
 #include "utllinkedlist.h"
 #include "jobthread.h"
 #include <time.h>
+
+#include "engine/ienginetrace.h"
+
+extern IEngineTrace *enginetrace;
+
+#ifdef LUA_SERVER
+#include "iserverunknown.h"
+#else
+#include "iclientunknown.h"
+#endif
 
 #define MAX_GROUND_LAYERS 16
 
@@ -35,10 +44,24 @@ struct AirSeedSpot
 	Vector normal;
 };
 
+inline void UTIL_TraceLine_GMOD(const Vector& vecAbsStart, const Vector& vecAbsEnd, unsigned int mask, trace_t *ptr) // , const IHandleEntity *ignore, int collisionGroup
+{
+	if(enginetrace == NULL)
+	{
+		Msg("Error\n");
+		while(1) {}
+	}
+
+	Ray_t ray;
+	ray.Init(vecAbsStart, vecAbsEnd);
+	CTraceFilterWorldAndPropsOnly traceFilter;
+	enginetrace->TraceRay(ray, mask, &traceFilter, ptr);
+}
+
 class Nav
 {
 public:
-	Nav(GMUtility *gmu, IThreadPool *threadPool, IFileSystem *filesystem, int GridSize);
+	Nav(IThreadPool *threadPool, IFileSystem *filesystem, int GridSize);
 	~Nav();
 	static NavDirType OppositeDirection(NavDirType Dir);
 
@@ -114,8 +137,7 @@ private:
 
 	int Mask;
 	int GenerationStepSize;
-	
-	GMUtility *GMU;
+
 	IThreadPool *threadPool;
 	IFileSystem *fs;
 	CThreadMutex lock;

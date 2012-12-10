@@ -7,9 +7,8 @@
 #define NODE_H
 
 #include "eiface.h"
-#include "gmutility.h"
 #include "defines.h"
-#include "gmluamodule.h"
+#include "ILuaModuleManager.h"
 
 class Node
 {

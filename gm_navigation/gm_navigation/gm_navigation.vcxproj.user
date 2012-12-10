@@ -3,7 +3,8 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LocalDebuggerAttach>true</LocalDebuggerAttach>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <LocalDebuggerCommand>H:\steamapps\space326\garry's mod beta\hl2.exe</LocalDebuggerCommand>
-    <LocalDebuggerWorkingDirectory>H:\steamapps\space326\garry's mod beta\</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerCommand>C:\Program Files (x86)\Steam\steamapps\space326\garrysmod\hl2.exe</LocalDebuggerCommand>
+    <LocalDebuggerWorkingDirectory>C:\Program Files (x86)\Steam\steamapps\space326\garrysmod</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerDebuggerType>Auto</LocalDebuggerDebuggerType>
   </PropertyGroup>
 </Project>
