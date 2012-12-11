@@ -7,9 +7,6 @@
     <ClCompile Include="nav.cpp">
       <Filter>Source FIles</Filter>
     </ClCompile>
-    <ClCompile Include="sigscan.cpp">
-      <Filter>Source FIles</Filter>
-    </ClCompile>
     <ClCompile Include="node.cpp">
       <Filter>Source FIles</Filter>
     </ClCompile>
@@ -28,9 +25,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="nav.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sigscan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="defines.h">

@@ -4,62 +4,116 @@
 */
 
 #include "nav.h"
+#include "ILuaModuleManager.h"
+#include "tier0/memdbgon.h"
 
-Nav::Nav(IThreadPool *threadPool, IFileSystem *filesystem, int GridSize)
+extern IEngineTrace *enginetrace;
+extern IFileSystem *filesystem;
+
+#ifndef USE_BOOST_THREADS
+extern IThreadPool *threadPool;
+#endif
+
+extern FileHandle_t fh;
+
+class GMOD_TraceFilter : public CTraceFilter
 {
-	fs = filesystem;
+public:
+	GMOD_TraceFilter()
+	{
+	}
 
-	Heuristic = HEURISTIC_MANHATTAN;
+	virtual bool ShouldHitEntity(IHandleEntity *pHandleEntity, int contentsMask)
+	{
+#ifdef LUA_SERVER
+		IServerUnknown *pUnk = (IServerUnknown*)pHandleEntity;
+#else
+		IClientUnknown *pUnk = (IClientUnknown*)pHandleEntity;
+#endif
+		pCollide = pUnk->GetCollideable();
+		return CheckCollisionGroup(pCollide->GetCollisionGroup());
+	}
 
-	Start = NULL;
-	End = NULL;
+	bool CheckCollisionGroup(int collisionGroup)
+	{
+		if(collisionGroup == COLLISION_GROUP_PLAYER)
+		{
+			return false;
+		}
+		return true;
+	}
 
-	Generated = false;
-	Generating = false;
-	GenerationMaxDistance = -1;
+private:
+	ICollideable *pCollide;
+};
 
-	Mask = MASK_PLAYERSOLID_BRUSHONLY;
+inline void UTIL_TraceLine_GMOD(const Vector& vecAbsStart, const Vector& vecAbsEnd, unsigned int mask, trace_t *ptr)
+{
+	if(enginetrace == NULL)
+	{
+		return;
+	}
+	Ray_t ray;
+	ray.Init(vecAbsStart, vecAbsEnd);
+	GMOD_TraceFilter traceFilter;
+	enginetrace->TraceRay(ray, mask, &traceFilter, ptr);
+}
+
+inline void UTIL_TraceHull_GMOD(const Vector& vecAbsStart, const Vector& vecAbsEnd, const Vector& vecMins, const Vector& vecMaxs, unsigned int mask, trace_t *ptr)
+{
+	if(enginetrace == NULL)
+	{
+		return;
+	}
+	Ray_t ray;
+	ray.Init(vecAbsStart, vecAbsEnd, vecMins, vecMaxs);
+	GMOD_TraceFilter traceFilter;
+	enginetrace->TraceRay(ray, mask, &traceFilter, ptr);
+}
+
+Nav::Nav(int GridSize)
+{
+	heuristic = HEURISTIC_MANHATTAN;
+
+	nodeStart = NULL;
+	nodeEnd = NULL;
+
+	generated = false;
+	generating = false;
+	generationMaxDistance = -1;
+
+	mask = MASK_PLAYERSOLID_BRUSHONLY;
 
 	SetDiagonal(false);
 	SetGridSize(GridSize);
 
-	Nodes.EnsureCapacity(10240);
+	nodes.EnsureCapacity(10240);
 	groundSeedList.EnsureCapacity(16);
 	airSeedList.EnsureCapacity(16);
 
-	this->threadPool = threadPool;
-
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "Created Nav\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("Created Nav\n");
 #endif
 }
 
 Nav::~Nav()
 {
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "Deconstructing Nav\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("Deconstructing Nav\n");
 #endif
 	
 	Msg("Deconstructing Nav!?\n");
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "Freeing Nodes\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("Freeing nodes\n");
 #endif
 
-	Nodes.PurgeAndDeleteElements();
-	//Opened.PurgeAndDeleteElements();
-   // Closed.PurgeAndDeleteElements();
+	nodes.PurgeAndDeleteElements();
+	//opened.PurgeAndDeleteElements();
+   // closed.PurgeAndDeleteElements();
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "Freed Nodes\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("Freed nodes\n");
 #endif
 }
 
@@ -88,21 +142,21 @@ NavDirType Nav::OppositeDirection(NavDirType Dir)
 
 void Nav::SetGridSize(int GridSize)
 {
-	GenerationStepSize = GridSize;
-	addVector = Vector(0, 0, GridSize / 2);
+	generationStepSize = GridSize;
+	vecAddOffset = Vector(0, 0, GridSize / 2);
 }
 
 Node *Nav::GetNode(const Vector &Pos)
 {
-	const float Tolerance = 0.45f * GenerationStepSize;
+	const float Tolerance = 0.45f * generationStepSize;
 
 	Node *Node;
-	for(int i = 0; i < Nodes.Count(); i++)
+	for(int i = 0; i < nodes.Count(); i++)
 	{
-		Node = Nodes[i];
-		float dx = fabs(Node->Pos.x - Pos.x);
-		float dy = fabs(Node->Pos.y - Pos.y);
-		float dz = fabs(Node->Pos.z - Pos.z);
+		Node = nodes[i];
+		float dx = fabs(Node->vecPos.x - Pos.x);
+		float dy = fabs(Node->vecPos.y - Pos.y);
+		float dz = fabs(Node->vecPos.z - Pos.z);
 		if(dx < Tolerance && dy < Tolerance && dz < Tolerance)
 		{
 			return Node;
@@ -114,18 +168,18 @@ Node *Nav::GetNode(const Vector &Pos)
 
 Node *Nav::GetNodeByID(int ID)
 {
-	if(!Nodes.IsValidIndex(ID))
+	if(!nodes.IsValidIndex(ID))
 	{
 		return NULL;
 	}
-	return Nodes.Element(ID);
+	return nodes.Element(ID);
 }
 
 Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node *Source)
 {
-	if(GenerationMaxDistance > 0)
+	if(generationMaxDistance > 0)
 	{
-		if(Origin.DistTo(Pos) > GenerationMaxDistance)
+		if(vecOrigin.DistTo(Pos) > generationMaxDistance)
 		{
 			return NULL;
 		}
@@ -140,15 +194,15 @@ Node *Nav::AddNode(const Vector &Pos, const Vector &Normal, NavDirType Dir, Node
 	{
 		UseNew = true;
 		node = new Node(Pos, Normal, Source);
-		node->SetID(Nodes.AddToTail(node));
+		node->SetID(nodes.AddToTail(node));
 #ifdef FILEBUG
-		fs->FPrintf(fh, "Adding Node <%f, %f>\n", Pos.x, Pos.y);
+		FILEBUG_WRITE("Adding Node <%f, %f>\n", Pos.x, Pos.y);
 #endif
 	}
 	else
 	{
 #ifdef FILEBUG
-		fs->FPrintf(fh, "Using Existing Node <%f, %f>\n", Pos.x, Pos.y);
+		FILEBUG_WRITE("Using Existing Node <%f, %f>\n", Pos.x, Pos.y);
 #endif
 	}
 
@@ -192,23 +246,23 @@ void Nav::RemoveNode(Node *node)
 		}
 	}
 
-	Nodes.Remove(node->GetID());
+	nodes.Remove(node->GetID());
 
 	// Update all node ids, removing a element from a utlvector will shift all the elements positions
-	for(int i = 0; i < Nodes.Count(); i++)
+	for(int i = 0; i < nodes.Count(); i++)
 	{
-		Nodes[i]->SetID(i);
+		nodes[i]->SetID(i);
 	}
 }
 
 int Nav::GetGridSize()
 {
-	return GenerationStepSize;
+	return generationStepSize;
 }
 
 bool Nav::IsGenerated()
 {
-	return Generated;
+	return generated;
 }
 
 float Nav::SnapToGrid(float x)
@@ -267,8 +321,8 @@ bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
 	{
 		from = pos + Vector( 0, 0, offset );
 
-		//GMU->TraceLine( from, to, Mask, &result);
-		UTIL_TraceLine_GMOD(from, to, Mask, &result);
+		//GMU->TraceLine( from, to, mask, &result);
+		UTIL_TraceLine_GMOD(from, to, mask, &result);
 
 		// if the trace came down thru a door, ignore the door and try again
 		// also ignore breakable floors
@@ -313,54 +367,68 @@ bool Nav::GetGroundHeight(const Vector &pos, float *height, Vector *normal)
 	return true;
 }
 
-CJob* Nav::GenerateQueue(JobInfo_t *info)
+#ifdef USE_BOOST_THREADS
+void Nav::GenerateQueue(JobInfo_t *info)
 {
-	if(Generating)
+	if(generating)
 	{
-		return NULL;
+		return;
 	}
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "GenerateQueue 1\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("GenerateQueue 1\n");
 #endif
 
 	ResetGeneration();
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "GenerateQueue 2\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("GenerateQueue 2\n");
 #endif
 
-	CJob* j = threadPool->QueueCall(this, &Nav::FullGeneration, &info->abort);
+	info->thread = boost::thread(&Nav::FullGeneration, this, &info->abort);  
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "Created Job\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("Created Job\n");
+#endif
+}
+#else
+void Nav::GenerateQueue(JobInfo_t *info)
+{
+	if(generating)
+	{
+		return;
+	}
+
+#ifdef FILEBUG
+	FILEBUG_WRITE("GenerateQueue 1\n");
 #endif
 
-	return j;
+	ResetGeneration();
+
+#ifdef FILEBUG
+	FILEBUG_WRITE("GenerateQueue 2\n");
+#endif
+
+	info->job = threadPool->QueueCall(this, &Nav::FullGeneration, &info->abort);
+
+#ifdef FILEBUG
+	FILEBUG_WRITE("Created Job\n");
+#endif
 }
+#endif
 
 void Nav::FullGeneration(bool *abort)
 {
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "FullGeneration Start\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("FullGeneration nodeStart\n");
 #endif
 
-	while(!SampleStep() && *abort == false)
+	while(!SampleStep() && (abort == NULL || *abort == false))
 	{
 	}
 
 #ifdef FILEBUG
-	fh = fs->Open("data/nav/filebug.txt", "a+", "MOD");
-	fs->FPrintf(fh, "FullGeneration End\n");
-	fs->Close(fh);
+	FILEBUG_WRITE("FullGeneration nodeEnd\n");
 #endif
 }
 
@@ -370,17 +438,17 @@ void Nav::ResetGeneration()
 	airSeedIndex = 0;
 	currentNode = NULL;
 
-	Generating = true;
-	Generated = false;
+	generating = true;
+	generated = false;
 	generatingGround = true;
 
-	Nodes.RemoveAll();
+	nodes.RemoveAll();
 }
 
 void Nav::SetupMaxDistance(const Vector &Pos, int MaxDistance)
 {
-	Origin = Pos;
-	GenerationMaxDistance = MaxDistance;
+	vecOrigin = Pos;
+	generationMaxDistance = MaxDistance;
 }
 
 void Nav::AddGroundSeed(const Vector &pos, const Vector &normal)
@@ -411,15 +479,13 @@ void Nav::ClearAirSeeds()
 Node* Nav::GetNextGroundSeedNode()
 {
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextGroundSeedNode: %i\n", groundSeedIndex);
-	fs->Flush(fh);
+	FILEBUG_WRITE("GetNextGroundSeedNode: %i\n", groundSeedIndex);
 #endif
 
 	if(groundSeedIndex == -1)
 	{
 #ifdef FILEBUG
-		fs->FPrintf(fh, "Invalid Seed Index 1\n");
-		fs->Flush(fh);
+		FILEBUG_WRITE("Invalid Seed Index 1\n");
 #endif
 		return NULL;
 	}
@@ -427,56 +493,49 @@ Node* Nav::GetNextGroundSeedNode()
 	if(!groundSeedList.IsValidIndex(groundSeedIndex))
 	{
 #ifdef FILEBUG
-		fs->FPrintf(fh, "Invalid Seed Index 2\n");
-		fs->Flush(fh);
+		FILEBUG_WRITE("Invalid Seed Index 2\n");
 #endif
 		return NULL;
 	}
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 1\n");
-	fs->Flush(fh);
+	FILEBUG_WRITE("GetNextGroundSeedNode: Continuing 1\n");
 #endif
 
 	GroundSeedSpot spot = groundSeedList.Element(groundSeedIndex);
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 2\n");
-	fs->Flush(fh);
+	FILEBUG_WRITE("GetNextGroundSeedNode: Continuing 2\n");
 #endif
 
 	groundSeedIndex = groundSeedList.Next(groundSeedIndex);
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextGroundSeedNode: Continuing 3\n");
-	fs->Flush(fh);
+	FILEBUG_WRITE("GetNextGroundSeedNode: Continuing 3\n");
 #endif
 
 	if(GetNode(spot.pos) == NULL)
 	{
-		if(GenerationMaxDistance > 0)
+		if(generationMaxDistance > 0)
 		{
-			if(Origin.DistTo(spot.pos) > GenerationMaxDistance)
+			if(vecOrigin.DistTo(spot.pos) > generationMaxDistance)
 			{
 #ifdef FILEBUG
-				fs->FPrintf(fh, "GetNextGroundSeedNode: Skipping Seed\n");
-				fs->Flush(fh);
+				FILEBUG_WRITE("GetNextGroundSeedNode: Skipping Seed\n");
 #endif
 				return GetNextGroundSeedNode();
 			}
 		}
 #ifdef FILEBUG
-		fs->FPrintf(fh, "GetNextGroundSeedNode: Adding Node\n");
-		fs->Flush(fh);
+		FILEBUG_WRITE("GetNextGroundSeedNode: Adding Node\n");
 #endif
 		Node *node = new Node(spot.pos, spot.normal, NULL);
-		node->SetID(Nodes.AddToTail(node));
+		node->SetID(nodes.AddToTail(node));
 		return node;
 	}
 
 #ifdef FILEBUG
-	fs->FPrintf(fh, "GetNextWalkableSeedNode: Next Seed\n");
-	fs->Flush(fh);
+	FILEBUG_WRITE("GetNextWalkableSeedNode: Next Seed\n");
 #endif
 
 	return GetNextGroundSeedNode();
@@ -500,15 +559,15 @@ Node *Nav::GetNextAirSeedNode()
 
 	if(GetNode(spot.pos) == NULL)
 	{
-		if(GenerationMaxDistance > 0)
+		if(generationMaxDistance > 0)
 		{
-			if(Origin.DistTo(spot.pos) > GenerationMaxDistance)
+			if(vecOrigin.DistTo(spot.pos) > generationMaxDistance)
 			{
 				return GetNextAirSeedNode();
 			}
 		}
 		Node *node = new Node(spot.pos, vector_origin, NULL);
-		node->SetID(Nodes.AddToTail(node));
+		node->SetID(nodes.AddToTail(node));
 		return node;
 	}
 
@@ -522,7 +581,7 @@ bool Nav::SampleStep()
 		return true;
 	}
 
-	if(!Generating)
+	if(!generating)
 	{
 		return true;
 	}
@@ -546,46 +605,41 @@ bool Nav::SampleStep()
 		//
 
 #ifdef FILEBUG
-		fs->FPrintf(fh, "Stepping From Node\n");
-		fs->Flush(fh);
+		FILEBUG_WRITE("Stepping From Node\n");
 #endif
-		for(int dir = NORTH; dir < NumDir; dir++)
+		for(int dir = NORTH; dir < numDirections; dir++)
 		{
 #ifdef FILEBUG
-			fs->FPrintf(fh, "Checking Direction: %i\n", dir);
-			fs->Flush(fh);
+			FILEBUG_WRITE("Checking Direction: %i\n", dir);
 #endif
 			if(!currentNode->HasVisited((NavDirType)dir))
 			{
 				// have not searched in this direction yet
 
 #ifdef FILEBUG
-				fs->FPrintf(fh, "Unsearched Direction: %i\n", dir);
-				fs->Flush(fh);
+				FILEBUG_WRITE("Unsearched Direction: %i\n", dir);
 #endif
 
 				// start at current node position
 				Vector Pos = *currentNode->GetPosition();
 
 #ifdef FILEBUG
-				fs->FPrintf(fh, "1 <%f, %f>\n", Pos.x, Pos.y);
-				fs->Flush(fh);
+				FILEBUG_WRITE("1 <%f, %f>\n", Pos.x, Pos.y);
 #endif
 				switch(dir)
 				{
-					case NORTH:	Pos.y += GenerationStepSize; break;
-					case SOUTH:	Pos.y -= GenerationStepSize; break;
-					case EAST:	Pos.x += GenerationStepSize; break;
-					case WEST:	Pos.x -= GenerationStepSize; break;
-					case NORTHEAST:	Pos.x += GenerationStepSize; Pos.y += GenerationStepSize; break;
-					case NORTHWEST:	Pos.x -= GenerationStepSize; Pos.y += GenerationStepSize; break;
-					case SOUTHEAST: Pos.x += GenerationStepSize; Pos.y -= GenerationStepSize; break;
-					case SOUTHWEST:	Pos.x -= GenerationStepSize; Pos.y -= GenerationStepSize; break;
+					case NORTH:	Pos.y += generationStepSize; break;
+					case SOUTH:	Pos.y -= generationStepSize; break;
+					case EAST:	Pos.x += generationStepSize; break;
+					case WEST:	Pos.x -= generationStepSize; break;
+					case NORTHEAST:	Pos.x += generationStepSize; Pos.y += generationStepSize; break;
+					case NORTHWEST:	Pos.x -= generationStepSize; Pos.y += generationStepSize; break;
+					case SOUTHEAST: Pos.x += generationStepSize; Pos.y -= generationStepSize; break;
+					case SOUTHWEST:	Pos.x -= generationStepSize; Pos.y -= generationStepSize; break;
 				}
 
 #ifdef FILEBUG
-				fs->FPrintf(fh, "2 <%f, %f>\n\n", Pos.x, Pos.y);
-				fs->Flush(fh);
+				FILEBUG_WRITE("2 <%f, %f>\n", Pos.x, Pos.y);
 #endif
 
 				generationDir = (NavDirType)dir;
@@ -605,21 +659,20 @@ bool Nav::SampleStep()
 				if(GetGroundHeight(Pos, &to.z, &toNormal) == false)
 				{
 #ifdef FILEBUG
-					fs->FPrintf(fh, "Ground Height Fail\n");
-					fs->Flush(fh);
+					FILEBUG_WRITE("Ground Height Fail\n");
 #endif
 					return false;
 				}
 
 				Vector from = *currentNode->GetPosition();
 
-				Vector fromOrigin = from + addVector;
-				Vector toOrigin = to + addVector;
+				Vector fromOrigin = from + vecAddOffset;
+				Vector toOrigin = to + vecAddOffset;
 
 				trace_t result;
 
-				//GMU->TraceLine(fromOrigin, toOrigin, Mask, &result);
-				UTIL_TraceLine_GMOD(fromOrigin, toOrigin, Mask, &result);
+				//GMU->TraceLine(fromOrigin, toOrigin, mask, &result);
+				UTIL_TraceLine_GMOD(fromOrigin, toOrigin, mask, &result);
 
 				bool walkable;
 
@@ -633,13 +686,12 @@ bool Nav::SampleStep()
 					float epsilon = 0.1f;
 
 					// check if ledge is too high to reach or will cause us to fall to our death
-					// Using GenerationStepSize instead of JumpCrouchHeight so that stairs will work with different grid sizes
-					if(toGround - fromGround > GenerationStepSize + epsilon || fromGround - toGround > DeathDrop)
+					// Using generationStepSize instead of JumpCrouchHeight so that stairs will work with different grid sizes
+					if(toGround - fromGround > generationStepSize + epsilon || fromGround - toGround > DeathDrop)
 					{
 						walkable = false;
 #ifdef FILEBUG
-						fs->FPrintf(fh, "Bad Ledge\n");
-						fs->Flush(fh);
+						FILEBUG_WRITE("Bad Ledge\n");
 #endif
 					}
 					else
@@ -659,22 +711,21 @@ bool Nav::SampleStep()
 							Vector p;
 
 							// need to guarantee that we test the exact edges
-							if(along >= GenerationStepSize)
+							if(along >= generationStepSize)
 							{
 								p = to;
 								done = true;
 							}
 							else
 							{
-								p = from + delta * (along / GenerationStepSize);
+								p = from + delta * (along / generationStepSize);
 							}
 
 							if(GetGroundHeight(p, &ground, &normal) == false)
 							{
 								walkable = false;
 #ifdef FILEBUG
-								fs->FPrintf(fh, "Bad Node Path\n");
-								fs->Flush(fh);
+								FILEBUG_WRITE("Bad Node Path\n");
 #endif
 								break;
 							}
@@ -684,8 +735,7 @@ bool Nav::SampleStep()
 							{
 								walkable = false;
 #ifdef FILEBUG
-								fs->FPrintf(fh, "Slope\n");
-								fs->Flush(fh);
+								FILEBUG_WRITE("Slope\n");
 #endif
 								break;
 							}
@@ -698,14 +748,19 @@ bool Nav::SampleStep()
 				{
 					walkable = false;
 #ifdef FILEBUG
-					fs->FPrintf(fh, "Hit Something\n");
-					fs->Flush(fh);
+					FILEBUG_WRITE("Hit Something\n");
 #endif
 				}
 
 				if(walkable)
 				{
+#ifdef FILEBUG
+					FILEBUG_WRITE("Walkable 1!\n");
+#endif
 					AddNode(to, toNormal, generationDir, currentNode);
+#ifdef FILEBUG
+					FILEBUG_WRITE("Walkable 2!\n");
+#endif
 				}
 
 				return false;
@@ -738,12 +793,12 @@ bool Nav::SampleStep()
 
 				switch(dir)
 				{
-					case UP:		pos.z += GenerationStepSize; break;
-					case DOWN:		pos.z -= GenerationStepSize; break;
-					case LEFT:		pos.x -= GenerationStepSize; break;
-					case RIGHT:		pos.x += GenerationStepSize; break;
-					case FORWARD:	pos.y += GenerationStepSize; break;
-					case BACKWARD:	pos.y -= GenerationStepSize; break;
+					case UP:		pos.z += generationStepSize; break;
+					case DOWN:		pos.z -= generationStepSize; break;
+					case LEFT:		pos.x -= generationStepSize; break;
+					case RIGHT:		pos.x += generationStepSize; break;
+					case FORWARD:	pos.y += generationStepSize; break;
+					case BACKWARD:	pos.y -= generationStepSize; break;
 				}
 
 				generationDir = (NavDirType)dir;
@@ -752,8 +807,8 @@ bool Nav::SampleStep()
 				// Trace from the current node to the pos (Check if we hit anything)
 				trace_t result;
 
-				//GMU->TraceLine(*currentNode->GetPosition(), pos, Mask, &result);
-				UTIL_TraceLine_GMOD(*currentNode->GetPosition(), pos, Mask, &result);
+				//GMU->TraceLine(*currentNode->GetPosition(), pos, mask, &result);
+				UTIL_TraceLine_GMOD(*currentNode->GetPosition(), pos, mask, &result);
 
 				if(!result.DidHit())
 				{
@@ -773,15 +828,15 @@ bool Nav::SampleStep()
 		//Msg("back to parent\n");
 	}
 
-	Generated = true;
-	Generating = false;
+	generated = true;
+	generating = false;
 
 	return true;
 }
 
 bool Nav::Save(const char *Filename)
 {
-	if(Generating)
+	if(generating)
 	{
 		return false;
 	}
@@ -791,26 +846,26 @@ bool Nav::Save(const char *Filename)
 	Node *node, *connection;
 
 	int TotalConnections = 0;
-	int NodeTotal = Nodes.Count();
+	int NodeTotal = nodes.Count();
 
 	// Save current nav file version
 	// buf.PutInt(NAV_VERSION);
 
 	//////////////////////////////////////////////
-	// Nodes
+	// nodes
 	buf.PutInt(NodeTotal);
 
 	for(int i = 0; i < NodeTotal; i++)
 	{
-		node = Nodes[i];
+		node = nodes[i];
 
-		buf.PutFloat(node->Pos.x);
-		buf.PutFloat(node->Pos.y);
-		buf.PutFloat(node->Pos.z);
+		buf.PutFloat(node->vecPos.x);
+		buf.PutFloat(node->vecPos.y);
+		buf.PutFloat(node->vecPos.z);
 
-		buf.PutFloat(node->Normal.x);
-		buf.PutFloat(node->Normal.y);
-		buf.PutFloat(node->Normal.z);
+		buf.PutFloat(node->vecNormal.x);
+		buf.PutFloat(node->vecNormal.y);
+		buf.PutFloat(node->vecNormal.z);
 
 		for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 		{
@@ -828,7 +883,7 @@ bool Nav::Save(const char *Filename)
 
 	for(int i = 0; i < NodeTotal; i++)
 	{
-		node = Nodes[i];
+		node = nodes[i];
 		for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 		{
 			connection = node->GetConnectedNode((NavDirType)Dir);
@@ -845,14 +900,31 @@ bool Nav::Save(const char *Filename)
 	//////////////////////////////////////////////
 	// Write File
 
-	FileHandle_t fh = fs->Open(Filename, "a+");
-	if(!fh)
+	if(filesystem == NULL)
 	{
 		return false;
+		/*
+		char writePath[MAX_PATH];
+		Q_snprintf(writePath, MAX_PATH, "garrysmod/%s", Filename);
+
+		FILE *pFile = fopen(writePath, "wb");
+		fwrite(buf.Base(), 1, buf.TellPut(), pFile);
+		fclose(pFile);
+		*/
+	}
+	else
+	{
+		FileHandle_t fh = filesystem->Open(Filename, "a+");
+
+		if(!fh)
+		{
+			return false;
+		}
+
+		filesystem->Write(buf.Base(), buf.TellPut(), fh);
+		filesystem->Close(fh);
 	}
 
-	fs->Write(buf.Base(), buf.TellPut(), fh);
-	fs->Close(fh);
 	//////////////////////////////////////////////
 
 	return true;
@@ -860,33 +932,82 @@ bool Nav::Save(const char *Filename)
 
 bool Nav::Load(const char *Filename)
 {
-	if(Generating)
+	if(generating)
 	{
 		return false;
 	}
 
 	CUtlBuffer buf;
 
-	if(!fs->ReadFile(Filename, "MOD", buf))
+	if(filesystem != NULL)
+	{
+		if(!filesystem->ReadFile(Filename, "MOD", buf))
+		{
+			return false;
+		}
+	}
+	else
 	{
 		return false;
-	}
+		
+		char readPath[MAX_PATH];
+		Q_snprintf(readPath, MAX_PATH, "garrysmod/%s", Filename);
 
-	buf.SeekGet(CUtlBuffer::SEEK_HEAD, 0);
+		FILE *pFile = fopen(readPath , "rb");
+		if(pFile == NULL)
+		{
+			return false;
+		}
+
+		fseek(pFile, 0, SEEK_END);
+
+		long fileSize = ftell(pFile);
+
+		fseek(pFile, 0, SEEK_SET);
+
+		/*
+		unsigned char *buffer = (unsigned char*)malloc(lSize * sizeof(unsigned char));
+		if(fread(buffer, sizeof(unsigned char), lSize, pFile) != lSize)
+		{
+			return false;
+		}
+
+		fclose(pFile);
+
+		CUtlBuffer buf(buffer, lSize * sizeof(unsigned char));
+		//buf.Put(buffer, lSize * sizeof(unsigned char));
+
+		buf.SeekGet(CUtlBuffer::SEEK_HEAD, 0);
+		*/
+
+		CUtlBuffer buf;
+
+		buf.EnsureCapacity(fileSize);
+
+		int nBytesRead = fread(buf.Base(), 1, fileSize, pFile);
+
+		fclose(pFile);
+
+		buf.SeekPut(CUtlBuffer::SEEK_HEAD, nBytesRead);
+	}
 
 	Node *node;
 	int Dir, SrcID, DestID;
 
-	Nodes.RemoveAll();
+	nodes.RemoveAll();
 
 	//int fileVersion = buf.GetInt();
 
 	//////////////////////////////////////////////
-	// Nodes
+	// nodes
 	int NodeTotal = buf.GetInt();
+
+	//FILEBUG_WRITE("total: %d\n", NodeTotal);
 
 	for(int i = 0; i < NodeTotal; i++)
 	{
+		//FILEBUG_WRITE("Reading node");
+
 		Vector Pos, Normal;
 		Pos.x = buf.GetFloat();
 		Pos.y = buf.GetFloat();
@@ -897,21 +1018,40 @@ bool Nav::Load(const char *Filename)
 		Normal.z = buf.GetFloat();
 
 		node = new Node(Pos, Normal, NULL);
-		node->SetID(Nodes.AddToTail(node));
+		node->SetID(nodes.AddToTail(node));
+
+		//FILEBUG_WRITE("...Read node\n");
 	}
 	//////////////////////////////////////////////
 
 	//////////////////////////////////////////////
 	// Connections
+	//FILEBUG_WRITE("TotalConnections\n");
+
 	int TotalConnections = buf.GetInt();
+
+	//FILEBUG_WRITE("TotalConnections: %d", TotalConnections);
 
 	for(int i = 0; i < TotalConnections; i++)
 	{
 		Dir = buf.GetInt();
 		SrcID = buf.GetInt();
 		DestID = buf.GetInt();
-		Nodes[SrcID]->ConnectTo(Nodes[DestID], (NavDirType)Dir);
+		
+		//FILEBUG_WRITE("TotalConnections: %d %d %d\n", Dir, SrcID, DestID);
+
+		// Should never be a problem...
+		if(Dir <= NUM_DIRECTIONS_MAX - 1 && DestID - 1 <= nodes.Count() && SrcID - 1 <= nodes.Count())
+		{
+			nodes[SrcID]->ConnectTo(nodes[DestID], (NavDirType)Dir);
+		}
+		else
+		{
+			//FILEBUG_WRITE("Invalid connection\n", SrcID);
+		}
 	}
+
+	//FILEBUG_WRITE("Done\n");
 
 	//////////////////////////////////////////////
 
@@ -920,7 +1060,7 @@ bool Nav::Load(const char *Filename)
 
 CUtlVector<Node*>& Nav::GetNodes()
 {
-	return Nodes;
+	return nodes;
 }
 
 Node *Nav::GetClosestNode(const Vector &Pos)
@@ -930,10 +1070,10 @@ Node *Nav::GetClosestNode(const Vector &Pos)
 	
 	Node *Node, *ClosestNode;
 
-	for(int i = 0; i < Nodes.Count(); i++)
+	for(int i = 0; i < nodes.Count(); i++)
 	{
-		Node = Nodes[i];
-		NodeDist = Pos.DistTo(Node->Pos);
+		Node = nodes[i];
+		NodeDist = Pos.DistTo(Node->vecPos);
 		if(Distance == -1 || NodeDist < Distance)
 		{
 			ClosestNode = Node;
@@ -947,46 +1087,46 @@ Node *Nav::GetClosestNode(const Vector &Pos)
 void Nav::Reset()
 {
 	Node *node;
-	for(int i = 0; i < Nodes.Count(); i++)
+	for(int i = 0; i < nodes.Count(); i++)
 	{
-		node = Nodes[i];
+		node = nodes[i];
 		node->SetClosed(false);
 		node->SetOpened(false);
 	}
-	Opened.RemoveAll();
-	Closed.RemoveAll();
+	opened.RemoveAll();
+	closed.RemoveAll();
 }
 
 void Nav::AddOpenedNode(Node *node)
 {
 	node->SetOpened(true);
-	Opened.AddToTail(node);
+	opened.AddToTail(node);
 }
 
 void Nav::AddClosedNode(Node *node)
 {
 	node->SetClosed(true);
-	bool Removed = Opened.FindAndRemove(node);
+	bool Removed = opened.FindAndRemove(node);
 	if(!Removed)
 	{
 		Msg("Failed to remove Node!?\n");
 	}
 }
 
-float Nav::HeuristicDistance(const Vector *StartPos, const Vector *EndPos)
+float Nav::HeuristicDistance(const Vector *vecStartPos, const Vector *EndPos)
 {
-	if(Heuristic == HEURISTIC_MANHATTAN)
+	if(heuristic == HEURISTIC_MANHATTAN)
 	{
-		return ManhattanDistance(StartPos, EndPos);
+		return ManhattanDistance(vecStartPos, EndPos);
 	}
-	else if(Heuristic == HEURISTIC_EUCLIDEAN)
+	else if(heuristic == HEURISTIC_EUCLIDEAN)
 	{
-		return EuclideanDistance(StartPos, EndPos);
+		return EuclideanDistance(vecStartPos, EndPos);
 	}
-	else if(Heuristic == HEURISTIC_CUSTOM)
+	else if(heuristic == HEURISTIC_CUSTOM)
 	{
-		//gLua->PushReference(HeuristicRef);
-			//GMOD_PushVector(StartPos);
+		//gLua->PushReference(heuristicRef);
+			//GMOD_PushVector(vecStartPos);
 			//GMOD_PushVector(EndPos);
 		//gLua->Call(2, 1);
 		//return gLua->GetNumber(1);
@@ -994,24 +1134,24 @@ float Nav::HeuristicDistance(const Vector *StartPos, const Vector *EndPos)
 	return NULL;
 }
 
-float Nav::ManhattanDistance(const Vector *StartPos, const Vector *EndPos)
+float Nav::ManhattanDistance(const Vector *vecStartPos, const Vector *EndPos)
 {
-	return (abs(EndPos->x - StartPos->x) + abs(EndPos->y - StartPos->y) + abs(EndPos->z - StartPos->z));
+	return (abs(EndPos->x - vecStartPos->x) + abs(EndPos->y - vecStartPos->y) + abs(EndPos->z - vecStartPos->z));
 }
 
 // u clid e an
-float Nav::EuclideanDistance(const Vector *StartPos, const Vector *EndPos)
+float Nav::EuclideanDistance(const Vector *vecStartPos, const Vector *EndPos)
 {
-	return sqrt(pow(EndPos->x - StartPos->x, 2) + pow(EndPos->y - StartPos->y, 2) + pow(EndPos->z - StartPos->z, 2));
+	return sqrt(pow(EndPos->x - vecStartPos->x, 2) + pow(EndPos->y - vecStartPos->y, 2) + pow(EndPos->z - vecStartPos->z, 2));
 }
 
 Node *Nav::FindLowestF()
 {
 	float BestScoreF = NULL;
 	Node *node, *winner = NULL;
-	for(int i = 0; i < Opened.Count(); i++)
+	for(int i = 0; i < opened.Count(); i++)
 	{
-		node = Opened[i];
+		node = opened[i];
 		if(BestScoreF == NULL || node->GetScoreF() < BestScoreF)
 		{
 			winner = node;
@@ -1021,10 +1161,18 @@ Node *Nav::FindLowestF()
 	return winner;
 }
 
-CJob* Nav::FindPathQueue(JobInfo_t *info)
+#ifdef USE_BOOST_THREADS
+void Nav::FindPathQueue(JobInfo_t *info)
 {
-	return threadPool->QueueCall(this, &Nav::ExecuteFindPath, info, Start, End);
+	info->thread = boost::thread(&Nav::ExecuteFindPath, this, info, nodeStart, nodeEnd);  
 }
+
+#else
+void Nav::FindPathQueue(JobInfo_t *info)
+{
+	info->job = threadPool->QueueCall(this, &Nav::ExecuteFindPath, info, nodeStart, nodeEnd);
+}
+#endif
 
 void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 {
@@ -1046,7 +1194,7 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 	Node *current = NULL, *connection = NULL;
 	
 #ifdef FILEBUG
-	fs->FPrintf(fh, "Added Node\n");
+	FILEBUG_WRITE("Added Node\n");
 #endif
 
 	while(!info->abort)
@@ -1069,7 +1217,7 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 
 			currentScoreG = current->GetScoreG();
 
-			for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++) // NumDir
+			for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++) // numDirections
 			{
 				connection = current->GetConnectedNode((NavDirType)Dir);
 
@@ -1087,17 +1235,15 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 
 				if(!connection->IsOpened() || scoreG < connection->GetScoreG())
 				{
-					/*
 					if(info->hull)
 					{
 						trace_t result;
-						GMU->TraceHull(*current->GetPosition(), *connection->GetPosition(), info->mins, info->maxs, Mask, &result);
+						UTIL_TraceHull_GMOD(*current->GetPosition(), *connection->GetPosition(), info->mins, info->maxs, mask, &result);
 						if(result.DidHit())
 						{
 							continue;
 						}
 					}
-					*/
 
 					AddOpenedNode(connection);
 					connection->SetStatus(current, scoreG + HeuristicDistance(connection->GetPosition(), end->GetPosition()), scoreG);
@@ -1121,63 +1267,63 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 
 int Nav::GetMask()
 {
-	return Mask;
+	return mask;
 }
 
 void Nav::SetMask(int M)
 {
-	Mask = M;
+	mask = M;
 }
 
 bool Nav::GetDiagonal()
 {
-	return DiagonalMode;
+	return bDiagonalMode;
 }
 
 void Nav::SetDiagonal(bool Diagonal)
 {
-	DiagonalMode = Diagonal;
-	if(DiagonalMode)
+	bDiagonalMode = Diagonal;
+	if(bDiagonalMode)
 	{
-		NumDir = NUM_DIRECTIONS_DIAGONAL;
+		numDirections = NUM_DIRECTIONS_DIAGONAL;
 	}
 	else
 	{
-		NumDir = NUM_DIRECTIONS;
+		numDirections = NUM_DIRECTIONS;
 	}
 }
 
 int Nav::GetNumDir()
 {
-	return NumDir;
+	return numDirections;
 }
 
 int Nav::GetHeuristic()
 {
-	return Heuristic;
+	return heuristic;
 }
 
 Node *Nav::GetStart()
 {
-	return Start;
+	return nodeStart;
 }
 
 Node *Nav::GetEnd()
 {
-	return End;
+	return nodeEnd;
 }
 
 void Nav::SetHeuristic(int H)
 {
-	Heuristic = H;
+	heuristic = H;
 }
 
 void Nav::SetStart(Node *start)
 {
-	Start = start;
+	nodeStart = start;
 }
 
 void Nav::SetEnd(Node *end)
 {
-	End = end;
+	nodeEnd = end;
 }

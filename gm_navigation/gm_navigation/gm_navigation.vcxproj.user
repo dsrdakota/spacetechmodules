@@ -7,4 +7,7 @@
     <LocalDebuggerWorkingDirectory>C:\Program Files (x86)\Steam\steamapps\space326\garrysmod</LocalDebuggerWorkingDirectory>
     <LocalDebuggerDebuggerType>Auto</LocalDebuggerDebuggerType>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release - Client|Win32'">
+    <LocalDebuggerDebuggerType>Auto</LocalDebuggerDebuggerType>
+  </PropertyGroup>
 </Project>

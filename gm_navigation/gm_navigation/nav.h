@@ -11,12 +11,15 @@
 #include "defines.h"
 #include "utlbuffer.h"
 #include "utllinkedlist.h"
+
+#ifdef USE_BOOST_THREADS
+#include <boost/thread/thread.hpp>
+#else
 #include "jobthread.h"
+#endif
+
 #include <time.h>
-
-#include "engine/ienginetrace.h"
-
-extern IEngineTrace *enginetrace;
+#include <engine/IEngineTrace.h>
 
 #ifdef LUA_SERVER
 #include "iserverunknown.h"
@@ -44,24 +47,10 @@ struct AirSeedSpot
 	Vector normal;
 };
 
-inline void UTIL_TraceLine_GMOD(const Vector& vecAbsStart, const Vector& vecAbsEnd, unsigned int mask, trace_t *ptr) // , const IHandleEntity *ignore, int collisionGroup
-{
-	if(enginetrace == NULL)
-	{
-		Msg("Error\n");
-		while(1) {}
-	}
-
-	Ray_t ray;
-	ray.Init(vecAbsStart, vecAbsEnd);
-	CTraceFilterWorldAndPropsOnly traceFilter;
-	enginetrace->TraceRay(ray, mask, &traceFilter, ptr);
-}
-
 class Nav
 {
 public:
-	Nav(IThreadPool *threadPool, IFileSystem *filesystem, int GridSize);
+	Nav(int GridSize);
 	~Nav();
 	static NavDirType OppositeDirection(NavDirType Dir);
 
@@ -76,7 +65,7 @@ public:
 	Vector SnapToGrid(const Vector& in, bool snapX = true, bool snapY = true);
 	float Round(float Val, float Unit);
 	bool GetGroundHeight(const Vector &pos, float *height, Vector *normal);
-	CJob* GenerateQueue(JobInfo_t *info);
+	void GenerateQueue(JobInfo_t *info);
 	void FullGeneration(bool *abort);
 	void ResetGeneration();
 	void SetupMaxDistance(const Vector &Pos, int MaxDistance);
@@ -95,12 +84,14 @@ public:
 	CUtlVector<Node*>& GetNodes();
 	Node *GetClosestNode(const Vector &Pos);
 
-	float HeuristicDistance(const Vector *StartPos, const Vector *EndPos);
-	float ManhattanDistance(const Vector *StartPos, const Vector *EndPos);
-	float EuclideanDistance(const Vector *StartPos, const Vector *EndPos);
+	float HeuristicDistance(const Vector *vecStartPos, const Vector *EndPos);
+	float ManhattanDistance(const Vector *vecStartPos, const Vector *EndPos);
+	float EuclideanDistance(const Vector *vecStartPos, const Vector *EndPos);
 
 	Node *FindLowestF();
-	CJob* FindPathQueue(JobInfo_t *info);
+
+	void FindPathQueue(JobInfo_t *info);
+
 	void ExecuteFindPath(JobInfo_t *info, Node *start, Node *end);
 	void Reset();
 	void AddOpenedNode(Node *node);
@@ -117,7 +108,7 @@ public:
 	void SetStart(Node *start);
 	void SetEnd(Node *end);
 
-	enum Heuristic
+	enum heuristic
 	{
 		HEURISTIC_MANHATTAN,
 		HEURISTIC_EUCLIDEAN,
@@ -125,42 +116,36 @@ public:
 	};
 
 private:
-	bool Generated;
-	bool Generating;
+	bool generated;
+	bool generating;
 	bool generatingGround;
 
-	Vector StartPos;
-	Vector addVector;
+	Vector vecStartPos;
+	Vector vecAddOffset;
 
-	int NumDir;
-	bool DiagonalMode;
+	int numDirections;
+	bool bDiagonalMode;
 
-	int Mask;
-	int GenerationStepSize;
+	int mask;
+	int generationStepSize;
 
-	IThreadPool *threadPool;
-	IFileSystem *fs;
 	CThreadMutex lock;
-	
-#ifdef FILEBUG
-	FileHandle_t fh;
-#endif
 
 	NavDirType generationDir;
 	Node *currentNode;
 
-	Vector Origin;
-	int GenerationMaxDistance;
+	Vector vecOrigin;
+	int generationMaxDistance;
 
-	CUtlVector<Node*> Nodes;
-	CUtlVector<Node*> Opened;
-	CUtlVector<Node*> Closed;
+	CUtlVector<Node*> nodes;
+	CUtlVector<Node*> opened;
+	CUtlVector<Node*> closed;
 
-	Node *Start;
-	Node *End;
+	Node *nodeStart;
+	Node *nodeEnd;
 
-	int Heuristic;
-	int HeuristicRef;
+	int heuristic;
+	int heuristicRef;
 
 	int groundSeedIndex;
 	int airSeedIndex;

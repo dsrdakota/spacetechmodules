@@ -7,15 +7,19 @@
 #include "eiface.h"
 #include "filesystem.h"
 #include "engine/ienginetrace.h"
-#include "tier0/memdbgon.h"
+#include "defines.h"
 
-#include "sigscan.h"
-
-#include "node.h"
-#include "nav.h"
-
-typedef CUtlVector<Node*> NodeList_t;
-
-CUtlVector<JobInfo_t*> JobQueue;
-
+#ifdef USE_BOOST_THREADS
+#include <boost/thread/thread.hpp>
+#else
+#include <jobthread.h>
 IThreadPool* threadPool;
+#endif
+
+//#ifdef FILEBUG
+	FileHandle_t fh = FILESYSTEM_INVALID_HANDLE;
+//#endif
+
+IVEngineServer *engine = NULL;
+IFileSystem *filesystem = NULL;
+IEngineTrace *enginetrace = NULL;

@@ -10,12 +10,13 @@
 #include "defines.h"
 #include "ILuaModuleManager.h"
 
+#ifdef USE_BOOST_THREADS
+#include <boost/thread/thread.hpp>
+#endif
+
 class Node
 {
 public:
-	Vector Pos;
-	Vector Normal;
-
 	Node(const Vector &Position, const Vector &Norm, Node *Par);
 	~Node();
 	Node *GetParent();
@@ -31,7 +32,7 @@ public:
 	bool IsOpened();
 	void SetOpened(bool Open);
 	bool IsDisabled();
-	void SetDisabled(bool Disabled);
+	void SetDisabled(bool bDisabled);
 	bool IsClosed();
 	void SetClosed(bool Close);
 	float GetScoreF();
@@ -43,26 +44,33 @@ public:
 	void SetNormal(const Vector &Norm);
 	void SetPosition(const Vector &Position);
 
+	Vector vecPos;
+	Vector vecNormal;
+
 private:
-	int ID;
-	Node *Parent;
+	int iID;
+	Node *nodeParent;
 
-	unsigned short Visited;
-	Node *Connections[NUM_DIRECTIONS_MAX];
+	unsigned short visited;
+	Node *connections[NUM_DIRECTIONS_MAX];
 
-	Node *AStarParent;
-	bool Opened;
-	bool Closed;
-	bool Disabled;
-	float ScoreF;
-	float ScoreG;
+	Node *nodeAStarParent;
+	bool bOpened;
+	bool bClosed;
+	bool bDisabled;
+	float scoreF;
+	float scoreG;
 };
 
 class Nav;
 class CJob;
 struct JobInfo_t
 {
+#ifdef USE_BOOST_THREADS
+	boost::thread thread;
+#else
 	CJob* job;
+#endif
 	Nav* nav;
 	bool abort;
 	bool findPath;
