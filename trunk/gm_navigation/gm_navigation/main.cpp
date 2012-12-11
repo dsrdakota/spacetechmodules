@@ -5,11 +5,15 @@
 
 #include "main.h"
 
+#include "node.h"
+#include "nav.h"
+#include "tier0/memdbgon.h"
+
 GMOD_MODULE(Init, Shutdown);
 
-IVEngineServer *engine = NULL;
-IFileSystem *filesystem = NULL;
-IEngineTrace *enginetrace = NULL;
+typedef CUtlVector<Node*> NodeList_t;
+
+CUtlVector<JobInfo_t*> JobQueue;
 
 int VectorMetaRef = NULL;
 
@@ -102,28 +106,30 @@ void PushNode(lua_State* L, Node *node)
 
 ///////////////////////////////////////////////
 
-FileHandle_t fh;
-
 LUA_FUNCTION(nav_Create)
 {
 	Lua()->CheckType(1, GLua::TYPE_NUMBER);
 
-	PushNav(L, new Nav(threadPool, filesystem, (int)Lua()->GetNumber(1)));
+	PushNav(L, new Nav((int)Lua()->GetNumber(1)));
 
 	return 1;
 }
 
+#ifdef USE_BOOST_THREADS
+boost::posix_time::time_duration timeout = boost::posix_time::milliseconds(0);
+boost::posix_time::time_duration sleep_time = boost::posix_time::milliseconds(50);
+#endif
+
 LUA_FUNCTION(nav_Poll)
 {
-#ifdef FILEBUG
-	fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-	filesystem->FPrintf(fh, "Poll 1\n");
-	filesystem->Close(fh);
-#endif
 	for(int i=0; i < JobQueue.Size(); i++)
 	{
 		JobInfo_t* info = JobQueue[i];
+#ifdef USE_BOOST_THREADS
+		if(info->thread.timed_join(timeout))
+#else
 		if(info->job->IsFinished())
+#endif
 		{
 			Lua()->PushReference(info->funcRef);
 
@@ -170,28 +176,19 @@ LUA_FUNCTION(nav_Poll)
 				Lua()->FreeReference(info->updateRef);
 			}
 
+#ifndef USE_BOOST_THREADS
 			SafeRelease(info->job);
+#endif
 
 			delete info;
 			JobQueue.Remove(i);
 		}
 		else if(!info->findPath && info->updateTime > 0)
 		{
-#ifdef FILEBUG
-			fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-			filesystem->FPrintf(fh, "UpdateTime\n");
-			filesystem->Close(fh);
-#endif
-
 			time_t now = time(NULL);
 
 			if(difftime(now, info->updateTime) >= 1)
 			{
-#ifdef FILEBUG
-				fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-				filesystem->FPrintf(fh, "Update 1\n");
-				filesystem->Close(fh);
-#endif
 				Lua()->PushReference(info->updateRef);
 				if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
 				{
@@ -202,21 +199,9 @@ LUA_FUNCTION(nav_Poll)
 				Lua()->Call(2);
 
 				info->updateTime = now;
-
-#ifdef FILEBUG
-				fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-				filesystem->FPrintf(fh, "Update 2\n");
-				filesystem->Close(fh);
-#endif
 			}
 		}
 	}
-
-#ifdef FILEBUG
-	fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-	filesystem->FPrintf(fh, "Poll 2\n");
-	filesystem->Close(fh);
-#endif
 
 	return 0;
 }
@@ -335,10 +320,12 @@ LUA_FUNCTION(Nav_Generate)
 	JobInfo_t *info = new JobInfo_t;
 	info->abort = false;
 
-	CJob* job = nav->GenerateQueue(info);
-	if(job != NULL)
+	nav->GenerateQueue(info);
+
+#ifndef USE_BOOST_THREADS
+	if(info->job != NULL)
 	{
-		info->job = job;
+#endif
 		info->nav = nav;
 		info->findPath = false;
 		info->funcRef = Lua()->GetReference(2);
@@ -355,19 +342,23 @@ LUA_FUNCTION(Nav_Generate)
 		}
 
 		JobQueue.AddToTail(info);
+#ifndef USE_BOOST_THREADS
 	}
 	else
 	{
+#ifdef FILEBUG
+		FILEBUG_WRITE("Invalid job!\n");
+#endif
 		delete info;
 	}
-
-#ifdef FILEBUG
-	FileHandle_t fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-	filesystem->FPrintf(fh, "Nav_Generate\n");
-	filesystem->Close(fh);
+	Lua()->Push((bool)(job != NULL));
+#else
+	Lua()->Push((bool)true);
 #endif
 
-	Lua()->Push((bool)(job != NULL));
+#ifdef FILEBUG
+	FILEBUG_WRITE("Nav_Generate\n");
+#endif
 
 	return 1;
 }
@@ -406,11 +397,12 @@ LUA_FUNCTION(Nav_FindPath)
 
 	JobInfo_t *info = new JobInfo_t;
 
-	CJob* job = nav->FindPathQueue(info);
+	nav->FindPathQueue(info);
 
-	if(job != NULL)
+#ifndef USE_BOOST_THREADS
+	if(info->job != NULL)
 	{
-		info->job = job;
+#endif
 		info->nav = nav;
 		info->abort = false;
 		info->findPath = true;
@@ -418,6 +410,7 @@ LUA_FUNCTION(Nav_FindPath)
 		info->funcRef = Lua()->GetReference(2);
 
 		JobQueue.AddToTail(info);
+#ifndef USE_BOOST_THREADS
 	}
 	else
 	{
@@ -425,6 +418,51 @@ LUA_FUNCTION(Nav_FindPath)
 	}
 
 	Lua()->Push((bool)(job != NULL));
+#else
+	Lua()->Push((bool)true);
+#endif
+
+	return 1;
+}
+
+LUA_FUNCTION(Nav_FindPathImmediate)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+
+	Nav* nav = GetNav(L, 1);
+
+	JobInfo_t *info = new JobInfo_t;
+	info->nav = nav;
+	info->abort = false;
+	info->findPath = true;
+	info->hull = false;
+
+	nav->ExecuteFindPath(info, nav->GetStart(), nav->GetEnd());
+
+	if(info->foundPath)
+	{
+		ILuaObject *pathTable = Lua()->GetNewTable();
+		pathTable->Push();
+		pathTable->UnReference();
+
+		for(int i = 0; i < info->path.Count(); i++)
+		{
+			PushNode(L, info->path[i]);
+
+			ILuaObject *node = Lua()->GetObject();
+			pathTable = Lua()->GetObject(-2);
+				pathTable->SetMember((float)i + 1, node);
+				Lua()->Pop();
+			pathTable->UnReference();
+			node->UnReference();
+		}
+	}
+	else
+	{
+		Lua()->Push((bool)false);
+	}
+
+	delete info;
 
 	return 1;
 }
@@ -440,11 +478,12 @@ LUA_FUNCTION(Nav_FindPathHull)
 
 	JobInfo_t *info = new JobInfo_t();
 
-	CJob* job = nav->FindPathQueue(info);
+	nav->FindPathQueue(info);
 
-	if(job != NULL)
+#ifndef USE_BOOST_THREADS
+	if(info->job != NULL)
 	{
-		info->job = job;
+#endif
 		info->nav = nav;
 		info->abort = false;
 		info->findPath = true;
@@ -454,6 +493,7 @@ LUA_FUNCTION(Nav_FindPathHull)
 		info->funcRef = Lua()->GetReference(4);
 
 		JobQueue.AddToTail(info);
+#ifndef USE_BOOST_THREADS
 	}
 	else
 	{
@@ -461,6 +501,55 @@ LUA_FUNCTION(Nav_FindPathHull)
 	}
 
 	Lua()->Push((bool)(job != NULL));
+#else
+	Lua()->Push((bool)true);
+#endif
+
+	return 1;
+}
+
+LUA_FUNCTION(Nav_FindPathHullImmediate)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_VECTOR);
+	Lua()->CheckType(3, GLua::TYPE_VECTOR);
+
+	Nav* nav = GetNav(L, 1);
+
+	JobInfo_t *info = new JobInfo_t;
+	info->nav = nav;
+	info->abort = false;
+	info->findPath = true;
+	info->hull = true;
+	info->mins = GMOD_GetVector(L, 2);
+	info->maxs = GMOD_GetVector(L, 3);
+
+	nav->ExecuteFindPath(info, nav->GetStart(), nav->GetEnd());
+
+	if(info->foundPath)
+	{
+		ILuaObject *pathTable = Lua()->GetNewTable();
+		pathTable->Push();
+		pathTable->UnReference();
+
+		for(int i = 0; i < info->path.Count(); i++)
+		{
+			PushNode(L, info->path[i]);
+
+			ILuaObject *node = Lua()->GetObject();
+			pathTable = Lua()->GetObject(-2);
+				pathTable->SetMember((float)i + 1, node);
+				Lua()->Pop();
+			pathTable->UnReference();
+			node->UnReference();
+		}
+	}
+	else
+	{
+		Lua()->Push((bool)false);
+	}
+
+	delete info;
 
 	return 1;
 }
@@ -699,7 +788,7 @@ LUA_FUNCTION(Node_GetPosition)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	GMOD_PushVector(L, GetNode(L, 1)->Pos);
+	GMOD_PushVector(L, GetNode(L, 1)->vecPos);
 
 	return 1;
 }
@@ -708,7 +797,7 @@ LUA_FUNCTION(Node_GetNormal)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	GMOD_PushVector(L, GetNode(L, 1)->Normal);
+	GMOD_PushVector(L, GetNode(L, 1)->vecNormal);
 
 	return 1;
 }
@@ -851,51 +940,6 @@ LUA_FUNCTION(Node_RemoveConnection)
 	return 0;
 }
 
-
-///////////////////////////////////////////////
-// @haza55
-
-struct factorylist_t
-{
-	CreateInterfaceFn engineFactory;
-	CreateInterfaceFn physicsFactory;
-	CreateInterfaceFn fileSystemFactory;
-};
-
-void (*FactoryList_Retrieve)( factorylist_t &destData );
-
-factorylist_t GetFactories(lua_State* L)
-{
-	CSigScan::sigscan_dllfunc = Sys_GetFactory("server.dll");
-
-	if(!CSigScan::GetDllMemInfo())
-	{
-		Lua()->Error("Could not get access to factories.");
-	}
-
-	// 7/14/2012 - Updated signature for garrysmod beta
-	CSigScan sigscanFactories;
-	sigscanFactories.Init((unsigned char *)"\x55\x8B\xEC\x8B\x45\x08\x8B\x0D\x1C\xE7\xFE\x1B\x8B\x15\x20\xE7\xFE\x1B\x89\x08\x8B\x0D\x24\xE7\xFE\x1B\x89\x50\x04\x89\x48\x08\x5D\xC3", "xxxxxxxx????xx????xxxx????xxxxxxxx", 34);
-
-	if(!sigscanFactories.is_set)
-	{
-		Msg("GetFactories: Could not get access to factories, falling back to original signature\n");
-		sigscanFactories.Init((unsigned char *)"\x8B\x44\x24\x04\x8B\x0D\xC0\x33\x6D\x10\x8B\x15\xC4\x33\x6D\x10\x89\x08\x8B\x0D\xC8\x33\x6D\x10\x89\x50\x04\x89\x48\x08\xC3", "xxxxxx????xx????xxxx????xxxxxxx", 31);
-	}
-	
-	if(!sigscanFactories.is_set)
-	{
-		Lua()->Error("Could not get access to factories.");
-	}
-
-	FactoryList_Retrieve = (void (*)(factorylist_t &))sigscanFactories.sig_addr;
-
-	factorylist_t factories;
-	FactoryList_Retrieve(factories);
-
-	return factories;
-}
-
 ///////////////////////////////////////////////
 
 int Init(lua_State* L)
@@ -924,17 +968,20 @@ int Init(lua_State* L)
 
 	fsFactory = Sys_GetFactory("filesystem_steam.dll");
 
-	if(!fsFactory)
+	if(fsFactory)
 	{
-		Lua()->Error("gm_navigation: Missing fsFactory\n");
+		filesystem = (IFileSystem*)fsFactory(FILESYSTEM_INTERFACE_VERSION, NULL);
+		if(!filesystem)
+		{
+			Lua()->ErrorNoHalt("gm_navigation: Missing IFileSystem interface.\n");
+		}
+	}
+	else
+	{
+		Lua()->ErrorNoHalt("gm_navigation: Missing fsFactory\n");
 	}
 
-	filesystem = (IFileSystem*)fsFactory(FILESYSTEM_INTERFACE_VERSION, NULL);
-	if(!filesystem)
-	{
-		Lua()->Error("gm_navigation: Missing IFileSystem interface.\n");
-	}
-
+#ifndef USE_BOOST_THREADS
 	threadPool = CreateThreadPool();
 
 	ThreadPoolStartParams_t params;
@@ -945,6 +992,7 @@ int Init(lua_State* L)
 		SafeRelease(threadPool);
 		Lua()->Error("gm_navigation: Thread pool is null\n");
 	}
+#endif
 
 	ILuaObject* navTable = Lua()->GetNewTable();
 		navTable->SetMember("Create", nav_Create);
@@ -997,6 +1045,7 @@ int Init(lua_State* L)
 			NavIndex->SetMember("FullGeneration", Nav_FullGeneration);
 			NavIndex->SetMember("IsGenerated", Nav_IsGenerated);
 			NavIndex->SetMember("FindPath", Nav_FindPath);
+			NavIndex->SetMember("FindPathImmediate", Nav_FindPathImmediate);
 			NavIndex->SetMember("FindPathHull", Nav_FindPathHull);
 			NavIndex->SetMember("GetHeuristic", Nav_GetHeuristic);
 			NavIndex->SetMember("GetStart", Nav_GetStart);
@@ -1058,17 +1107,38 @@ int Init(lua_State* L)
 	Msg("gmcl_navigation_win32: Loaded\n");
 #endif
 
+#ifdef FILEBUG
+	fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+	FILEBUG_WRITE("Opened Module\n");
+#endif
+
 	return 0;
 }
 
 int Shutdown(lua_State* L)
 {
-	if(VectorMetaRef)
+#ifdef USE_BOOST_THREADS
+	for(int i=0; i < JobQueue.Size(); i++)
 	{
-		Lua()->FreeReference(VectorMetaRef);
-		VectorMetaRef = NULL;
-	}
+		JobQueue[i]->abort = true;
+		/*
+		if(JobQueue[i]->thread.joinable())
+		{
+			JobQueue[i]->thread.join();
+		}
+		*/
 
+		Msg("gm_navigation: Aborting threads...\n");
+
+		while(!JobQueue[i]->thread.timed_join(timeout))
+		{
+			boost::this_thread::sleep(sleep_time);
+			Msg("Waiting...\n");
+		}
+
+		Msg("gm_navigation: Done\n");
+	}
+#else
 	if(threadPool != NULL)
 	{
 		for(int i=0; i < JobQueue.Size(); i++)
@@ -1079,6 +1149,21 @@ int Shutdown(lua_State* L)
 		DestroyThreadPool(threadPool);
 		threadPool = NULL;
 	}
+#endif
+
+	if(VectorMetaRef)
+	{
+		Lua()->FreeReference(VectorMetaRef);
+		VectorMetaRef = NULL;
+	}
+
+#ifdef FILEBUG
+	if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE)
+	{
+		filesystem->FPrintf(fh, "Closed Module\n");
+		filesystem->Close(fh);
+	}
+#endif
 
 	return 0;
 }

@@ -6,7 +6,10 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#define FILEBUG
+#define USE_BOOST_THREADS
+
+//#define FILEBUG
+#define FILEBUG_WRITE(...) if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE) { filesystem->FPrintf(fh, __VA_ARGS__);  filesystem->Flush(fh); }
 
 // Version for save files
 #define NAV_VERSION 1

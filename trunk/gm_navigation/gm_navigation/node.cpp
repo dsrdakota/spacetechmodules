@@ -4,68 +4,69 @@
 */
 
 #include "node.h"
+#include "tier0/memdbgon.h"
 
 Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 {
-	ID = -1;
-	Pos = Position;
-	Normal = Norm;
-	Parent = Par;
+	iID = -1;
+	vecPos = Position;
+	vecNormal = Norm;
+	nodeParent = Par;
 
 	// Not sure if theres any memory problems with this.
 	// If it's not diagonal your still setting 4 of them to NULL
 	for(int i = NORTH; i < NUM_DIRECTIONS_MAX; i++)
 	{
-		Connections[i] = NULL;
+		connections[i] = NULL;
 	}
 
-	Visited = 0;
+	visited = 0;
 
-	Opened = false;
-	Closed = false;
-	Disabled = false;
-	AStarParent = NULL;
+	bOpened = false;
+	bClosed = false;
+	bDisabled = false;
+	nodeAStarParent = NULL;
 }
 
 Node::~Node()
 {
 	Msg("Deconstructed Node!?\n");
-	//delete [] &Connections;
+	//delete [] &connections;
 }
 
 void Node::ConnectTo(Node *node, NavDirType Dir)
 {
-	Connections[Dir] = node;
+	connections[Dir] = node;
 }
 
 Node *Node::GetConnectedNode(NavDirType Dir)
 {
-	return Connections[Dir];
+	return connections[Dir];
 }
 
 const Vector *Node::GetPosition()
 {
-	return &Pos;
+	return &vecPos;
 }
 
 const Vector *Node::GetNormal()
 {
-	return &Normal;
+	return &vecNormal;
 }
 
 Node *Node::GetParent()
 {
-	return Parent;
+	return nodeParent;
 }
 
 void Node::MarkAsVisited(NavDirType Dir)
 {
-	Visited |= (1 << Dir);
+	visited |= (1 << Dir);
 }
 
 bool Node::HasVisited(NavDirType Dir)
 {
-	if(Visited & (1 << Dir))
+	if(visited & (1 << Dir))
 	{
 		return true;
 	}
@@ -74,77 +75,77 @@ bool Node::HasVisited(NavDirType Dir)
 
 void Node::SetStatus(Node* P, float F, float G)
 {
-	AStarParent = P;
-	ScoreF = F;
-	ScoreG = G;
+	nodeAStarParent = P;
+	scoreF = F;
+	scoreG = G;
 }
 
 bool Node::IsOpened()
 {
-	return Opened;
+	return bOpened;
 }
 
 void Node::SetOpened(bool Open)
 {
-	Opened = Open;
+	bOpened = Open;
 }
 
 bool Node::IsDisabled()
 {
-	return Disabled;
+	return bDisabled;
 }
 
-void Node::SetDisabled(bool Disabled)
+void Node::SetDisabled(bool bDisabled)
 {
-	this->Disabled = Disabled;
+	this->bDisabled = bDisabled;
 }
 
 bool Node::IsClosed()
 {
-	return Closed;
+	return bClosed;
 }
 
 void Node::SetClosed(bool Close)
 {
-	Closed = Close;
+	bClosed = Close;
 }
 
 Node *Node::GetAStarParent()
 {
-	return AStarParent;
+	return nodeAStarParent;
 }
 
 void Node::SetAStarParent(Node* P)
 {
-	AStarParent = P;
+	nodeAStarParent = P;
 }
 
 float Node::GetScoreF()
 {
-	return ScoreF;
+	return scoreF;
 }
 
 float Node::GetScoreG()
 {
-	return ScoreG;
+	return scoreG;
 }
 
 int Node::GetID()
 {
-	return ID;
+	return iID;
 }
 
 void Node::SetID(int id)
 {
-	ID = id;
+	iID = id;
 }
 
 void Node::SetNormal(const Vector &Norm)
 {
-	Normal = Norm;
+	vecNormal = Norm;
 }
 
 void Node::SetPosition(const Vector &Position)
 {
-	Pos = Position;
+	vecPos = Position;
 }
