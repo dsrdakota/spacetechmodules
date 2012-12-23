@@ -875,6 +875,24 @@ LUA_FUNCTION(Node_GetConnections)
 	return 1;
 }
 
+LUA_FUNCTION(Node_GetScoreG)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+
+	Lua()->Push(GetNode(L, 1)->GetScoreG());
+
+	return 1;
+}
+
+LUA_FUNCTION(Node_GetScoreF)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+
+	Lua()->Push(GetNode(L, 1)->GetScoreF());
+
+	return 1;
+}
+
 LUA_FUNCTION(Node_IsConnected)
 {
 	Lua()->CheckType(1, NODE_TYPE);
@@ -1105,6 +1123,8 @@ int Init(lua_State* L)
 			NodeIndex->SetMember("GetPos", Node_GetPosition);
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
+			NodeIndex->SetMember("GetScoreF", Node_GetScoreF);
+			NodeIndex->SetMember("GetScoreG", Node_GetScoreG);
 			NodeIndex->SetMember("IsConnected", Node_IsConnected);
 			NodeIndex->SetMember("IsDisabled", Node_IsDisabled);
 			NodeIndex->SetMember("SetDisabled", Node_SetDisabled);
