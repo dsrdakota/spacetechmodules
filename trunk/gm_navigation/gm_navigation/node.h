@@ -14,6 +14,15 @@
 #include <boost/thread/thread.hpp>
 #endif
 
+#ifdef SASSILIZATION
+class Node;
+struct Border
+{
+	Node *head;
+	Node *tail;
+};
+#endif
+
 class Node
 {
 public:
@@ -44,6 +53,15 @@ public:
 	void SetNormal(const Vector &Norm);
 	void SetPosition(const Vector &Position);
 
+#ifdef SASSILIZATION
+	Border* GetBorder() const;
+	void SetBorder(Border *b);
+	Node* GetNext() const;
+	void SetNext(Node *n);
+	Node* GetPrev() const;
+	void SetPrev(Node *n);
+#endif
+
 	Vector vecPos;
 	Vector vecNormal;
 
@@ -60,6 +78,13 @@ private:
 	bool bDisabled;
 	float scoreF;
 	float scoreG;
+
+#ifdef SASSILIZATION
+	Border *border;
+	Node *next;
+	Node *prev;
+#endif
+
 };
 
 class Nav;

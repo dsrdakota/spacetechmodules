@@ -26,6 +26,12 @@ Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 	bClosed = false;
 	bDisabled = false;
 	nodeAStarParent = NULL;
+
+#ifdef SASSILIZATION
+	border = NULL;
+	next = NULL;
+	prev = NULL;
+#endif
 }
 
 Node::~Node()
@@ -149,3 +155,35 @@ void Node::SetPosition(const Vector &Position)
 {
 	vecPos = Position;
 }
+
+#ifdef SASSILIZATION
+Border* Node::GetBorder() const
+{
+	return border;
+}
+
+void Node::SetBorder(Border *b)
+{
+	border = b;
+}
+
+Node* Node::GetNext() const
+{
+	return next;
+}
+
+void Node::SetNext(Node *n)
+{
+	next = n;
+}
+
+Node* Node::GetPrev() const
+{
+	return prev;
+}
+
+void Node::SetPrev(Node *p)
+{
+	prev = p;
+}
+#endif

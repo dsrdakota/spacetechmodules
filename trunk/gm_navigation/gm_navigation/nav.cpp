@@ -1327,3 +1327,625 @@ void Nav::SetEnd(Node *end)
 {
 	nodeEnd = end;
 }
+
+#ifdef SASSILIZATION
+
+void GMOD_PushVector(lua_State* L, Vector& vec);
+
+bool IsTerritory(Node *node, NavDirType dir, int empire)
+{
+	Node *connected = node->GetConnectedNode(dir);
+	if( !connected )
+		return true;
+	else
+		return connected->GetScoreG() > 0 && connected->GetScoreF() == empire;
+}
+
+void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node, NavDirType nextDir, NavDirType prevDir )
+{
+	if(node->GetBorder() != NULL)
+	{
+		Lua()->Error("ASSERT Failed: Node border was not null");
+		return;
+	}
+
+	Node *nodeNext = node->GetConnectedNode(nextDir);
+	Node *nodePrev = node->GetConnectedNode(prevDir);
+
+	Border *border1 = NULL;
+	if( nodeNext )
+		border1 = nodeNext->GetBorder();
+	Border *border2 = NULL;
+	if( nodePrev )
+		border2 = nodePrev->GetBorder();
+	
+	if( border1 == NULL && border2 == NULL )
+	{
+		//create new border;
+		Border *border = new Border();
+		border->head = node;
+		border->tail = node;
+		node->SetBorder( border );
+		borders.AddToTail( border );
+		return;
+	}
+
+	if( border1 && border2 ) //merge
+	{
+		if( border1 != border2 )
+		{
+			if( border1->head != border1->tail )
+				border1->tail->SetBorder(NULL);
+			border1->tail->SetPrev(node);
+			node->SetNext(border1->tail);
+			border1->tail = border2->tail;
+			if( border2->head != border2->tail )
+				border2->head->SetBorder(NULL);
+			border2->head->SetNext(node);
+			node->SetPrev(border2->head);
+			border2->tail->SetBorder( border1 );
+			border1->tail->SetBorder( border1 );
+			borders.FindAndRemove( border2 ); //abitrarily remove border2
+			delete border2;
+		}
+		else
+		{
+			//loop
+			border1->tail->SetBorder(NULL);
+			border1->head->SetBorder(NULL);
+			node->SetBorder( border1 );
+			node->SetNext(border1->tail);
+			border1->tail->SetPrev(node);
+			node->SetPrev(border1->head);
+			border1->head->SetNext(node);
+			border1->head = node;
+			border1->tail = node;
+		}
+	} else if( border1 ) //connect 2 next
+	{
+		if( border1->head != border1->tail )
+			border1->tail->SetBorder(NULL);
+		border1->tail->SetPrev(node);
+		node->SetNext(border1->tail);
+		border1->tail = node;
+		node->SetBorder(border1);
+	}
+	else //( border2 ) //connect to prev
+	{
+		if( border2->head != border2->tail )
+			border2->head->SetBorder(NULL);
+		border2->head->SetNext(node);
+		node->SetPrev(border2->head);
+		border2->head = node;
+		node->SetBorder(border2);
+	}
+}
+
+/**
+ * Flood is used to determining territory borders of empires.
+ * for each node, scoreF determines the owner of the node and
+ * scoreG determines distance from influence.  Lower scoreG
+ * wins the node if two empires compete.
+ *
+ */
+void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
+{
+	lock.Lock();
+	Nav::Reset();
+
+	bool start = false;
+
+	int count = 1;
+	ILuaObject *ResultTable = Lua()->GetNewTable();
+	ResultTable->Push();
+	ResultTable->UnReference();
+
+	// open all nodes in the given table
+	for( int i = 0; i < pairs->Count(); i++ )
+	{
+		LuaKeyValue& entry = pairs->Element(i);
+
+		Lua()->Push(entry.pValue);
+
+		if(Lua()->GetType(-1) != Type::TABLE)
+		{
+			Lua()->Pop();
+			Lua()->DeleteLuaVector(pairs);
+			Lua()->Error("Nav:Flood value is not a table.\n");
+			return;
+		}
+
+		ILuaObject *t_node = entry.pValue->GetMember(1);
+		ILuaObject *t_pid = entry.pValue->GetMember(2);
+		ILuaObject *t_score = entry.pValue->GetMember(3);
+
+		if( t_node->GetType() != NODE_TYPE ||
+			t_pid->GetType() != Type::NUMBER ||
+			t_score->GetType() != Type::NUMBER )
+		{
+			Lua()->Pop();
+			Lua()->DeleteLuaVector(pairs);
+
+			t_node->UnReference();
+			t_pid->UnReference();
+			t_score->UnReference();
+
+			Lua()->Error("Nav:Flood table values incorrect, expected (node,number,number).\n");
+			return;
+		}
+
+		Node* node = (Node*)t_node->GetUserData();
+		if( node != NULL )
+		{
+			AddOpenedNode(node);
+			node->SetStatus( NULL, (int)(t_pid->GetFloat()), t_score->GetFloat() );
+			start = true;
+		}
+
+		t_node->UnReference();
+		t_pid->UnReference();
+		t_score->UnReference();
+
+		Lua()->Pop();
+	}
+
+	Lua()->DeleteLuaVector(pairs);
+
+	//abort if we were given no nodes
+	if(!start)
+	{
+		lock.Unlock();
+		return;
+	}
+	
+	CUtlVector<Node*> borderNodes;
+	CUtlVector<Border*> borders;
+	//CUtlDict<int, CUtlVector<Node*>> borders;
+
+	while( opened.Count() > 0 )
+	{
+		Node *current = opened.Head();
+		AddClosedNode(current);
+		closed.AddToTail(current);
+		
+		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
+		{
+			Node *connection = current->GetConnectedNode((NavDirType)Dir);
+
+			if(connection == NULL)
+			{
+				continue;
+			}
+
+			if(connection->IsClosed())
+			{
+				continue;
+			}
+			
+			float newScoreG = current->GetScoreG() + EuclideanDistance(current->GetPosition(), connection->GetPosition());
+			if( newScoreG > 135 )
+			{
+				if( !connection->IsOpened() && Dir < NORTHEAST && current->GetScoreF() == 1 )
+				{
+					//connection->SetClosed( true );
+					//borderNodes.AddToTail( current );
+				}
+			}
+			else if( !connection->IsOpened() || newScoreG < connection->GetScoreG() )
+			{
+				connection->SetStatus( current, current->GetScoreF(), newScoreG );
+				AddOpenedNode( connection );
+			}
+		}
+	}
+	
+	//FIND BORDER NODES, THIS ISN'T IDEAL!
+	
+	for( int i = 0; i < closed.Count(); i++ )
+	{
+		Node *current = closed.Element(i);
+
+		for(int Dir = NORTH; Dir < NORTHEAST; Dir++)
+		{
+			Node *connection = current->GetConnectedNode((NavDirType)Dir);
+
+			if(connection == NULL)
+			{
+				continue;
+			}
+
+			if(connection->GetScoreF() != current->GetScoreF())
+			{
+				if( !borderNodes.HasElement(current) )
+					borderNodes.AddToTail(current);
+				break;
+			}
+		}
+	}
+
+	unsigned char borderflags = 0;
+	static const unsigned char f_no = 0x01;
+	static const unsigned char f_ne = 0x02;
+	static const unsigned char f_ea = 0x04;
+	static const unsigned char f_se = 0x08;
+	static const unsigned char f_so = 0x10;
+	static const unsigned char f_sw = 0x20;
+	static const unsigned char f_we = 0x40;
+	static const unsigned char f_nw = 0x80;
+	Node *node;
+
+	for(int i = 0; i < borderNodes.Count(); i++)
+	{
+		node = borderNodes[i];
+
+		borderflags = 0;
+		int empire = (int)node->GetScoreF();
+		if( IsTerritory(node, NORTH     , empire) ) borderflags |= f_no;
+		if( IsTerritory(node, NORTHEAST , empire) ) borderflags |= f_ne;
+		if( IsTerritory(node, EAST      , empire) ) borderflags |= f_ea;
+		if( IsTerritory(node, SOUTHEAST , empire) ) borderflags |= f_se;
+		if( IsTerritory(node, SOUTH     , empire) ) borderflags |= f_so;
+		if( IsTerritory(node, SOUTHWEST , empire) ) borderflags |= f_sw;
+		if( IsTerritory(node, WEST      , empire) ) borderflags |= f_we;
+		if( IsTerritory(node, NORTHWEST , empire) ) borderflags |= f_nw;
+		//flip the bits
+		borderflags = ~borderflags;
+		
+		//NOTE: all connections must be counter-clockwise around the territory
+		
+		if( (borderflags & (f_no | f_ne | f_ea | f_so | f_we | f_nw)) == f_no )
+		{
+			AddConnection( L, borders, node, NORTHWEST, NORTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we)) == f_so )
+		{
+			AddConnection( L, borders, node, SOUTHEAST, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we)) == f_ea )
+		{
+			AddConnection( L, borders, node, NORTHEAST, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_so | f_sw | f_we | f_nw)) == f_we )
+		{
+			AddConnection( L, borders, node, SOUTHWEST, NORTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we)) == (f_ne | f_ea | f_se) )
+		{
+			AddConnection( L, borders, node, NORTH, SOUTH );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we)) == (f_se | f_so | f_sw) )
+		{
+			AddConnection( L, borders, node, EAST, WEST );
+		}
+		else if( (borderflags & (f_no | f_we | f_so | f_sw | f_we | f_nw)) == (f_sw | f_we | f_nw) )
+		{
+			AddConnection( L, borders, node, SOUTH, NORTH );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_we | f_nw)) == (f_no | f_ne | f_nw) )
+		{
+			AddConnection( L, borders, node, WEST, EAST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_we | f_nw)) == (f_no | f_ne) )
+		{
+			AddConnection( L, borders, node, NORTHWEST, EAST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we)) == (f_ne | f_ea) )
+		{
+			AddConnection( L, borders, node, NORTH, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we)) == (f_ea | f_se) )
+		{
+			AddConnection( L, borders, node, NORTHEAST, SOUTH );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we)) == (f_se | f_so) )
+		{
+			AddConnection( L, borders, node, EAST, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we)) == (f_so | f_sw) )
+		{
+			AddConnection( L, borders, node, SOUTHEAST, WEST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_so | f_sw | f_we | f_nw)) == (f_sw | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTH, NORTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_so | f_sw | f_we | f_nw)) == (f_we | f_nw) )
+		{
+			AddConnection( L, borders, node, SOUTHWEST, NORTH );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_we | f_nw)) == (f_no | f_nw) )
+		{
+			AddConnection( L, borders, node, WEST, NORTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we | f_nw)) == (f_no | f_ea | f_nw) )
+		{
+			AddConnection( L, borders, node, WEST, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we | f_nw)) == (f_no | f_ea | f_se) )
+		{
+			AddConnection( L, borders, node, NORTHWEST, SOUTH );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_sw | f_we | f_nw)) == (f_ne | f_ea | f_so) )
+		{
+			AddConnection( L, borders, node, NORTH, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_sw | f_we | f_nw)) == (f_ea | f_so | f_sw) )
+		{
+			AddConnection( L, borders, node, NORTHEAST, WEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we | f_nw)) == (f_se | f_so | f_we) )
+		{
+			AddConnection( L, borders, node, EAST, NORTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we | f_nw)) == (f_so | f_we | f_nw) )
+		{
+			AddConnection( L, borders, node, SOUTHEAST, NORTH );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_sw | f_we)) == (f_no | f_sw | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTH, NORTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_sw | f_we)) == (f_no | f_ne | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTHWEST, EAST );
+		} //inbetweens
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_sw | f_we)) == (f_no | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTHWEST, NORTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_se | f_so | f_sw | f_we | f_nw)) == (f_no | f_ea) )
+		{
+			AddConnection( L, borders, node, NORTHWEST, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_sw | f_we | f_nw)) == (f_ea | f_so) )
+		{
+			AddConnection( L, borders, node, NORTHEAST, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_we | f_nw)) == (f_so | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTHEAST, NORTHWEST );
+		} //NORTHEAST EXCEPTION
+		/*else if( (borderflags & (f_no | f_ea | f_so | f_se | f_we | f_nw)) == (f_se | f_we | f_nw) )
+		{
+			AddConnection( L, borders, node, NORTH, SOUTHEAST );
+		}*/
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_we | f_nw)) == (f_se | f_we | f_nw) )
+		{
+			if( (borderflags & f_so) )
+				AddConnection( L, borders, node, EAST, NORTH );
+			//else
+			//	AddConnection( L, borders, node, NORTH, SOUTHEAST );
+		} //SOUTHEAST EXCEPTION
+		/*else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_we | f_sw)) == (f_no | f_ne | f_sw) )
+		{
+			AddConnection( L, borders, node, EAST, SOUTHWEST );
+		}*/
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so | f_sw)) == (f_no | f_ne | f_sw) )
+		{
+			if( (borderflags & f_we) )
+				AddConnection( L, borders, node, SOUTH, EAST );
+			//else
+			//	AddConnection( L, borders, node, EAST, SOUTHWEST );
+		} //SOUTHWEST EXCEPTION
+		/*else if( (borderflags & (f_no | f_ea | f_se | f_so | f_we | f_nw)) == (f_ea | f_se | f_nw) )
+		{
+			AddConnection( L, borders, node, EAST, SOUTHWEST );
+		}*/
+		else if( (borderflags & (f_ea | f_se | f_so | f_sw | f_we | f_nw)) == (f_ea | f_se | f_nw) )
+		{
+			if( (borderflags & f_no) )
+				AddConnection( L, borders, node, WEST, SOUTH );
+			//else
+			//	AddConnection( L, borders, node, SOUTH, NORTHWEST );
+		} //NORTHWEST EXCEPTION
+		/*else if( (borderflags & (f_no | f_ne | f_ea | f_so | f_sw | f_we)) == (f_ne | f_so | f_sw) )
+		{
+			AddConnection( L, borders, node, EAST, SOUTHWEST );
+		}*/
+		else if( (borderflags & (f_no | f_ne | f_so | f_sw | f_we | f_nw)) == (f_ne | f_so | f_sw) )
+		{
+			if( (borderflags & f_ea) )
+				AddConnection( L, borders, node, NORTH, WEST );
+			//else
+			//	AddConnection( L, borders, node, NORTHEAST, WEST );
+		} //CORNER CASES
+		else if( (borderflags & (f_no | f_ea | f_so | f_we)) == (f_no | f_ea | f_so) )
+		{
+			AddConnection( L, borders, node, NORTHWEST, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_so | f_we)) == (f_no | f_ea | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTHWEST, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_so | f_we)) == (f_no | f_so | f_we) )
+		{
+			AddConnection( L, borders, node, SOUTHEAST, NORTHEAST );
+		}
+		else if( (borderflags & (f_no | f_ea | f_so | f_we)) == (f_ea | f_so | f_we) )
+		{
+			AddConnection( L, borders, node, NORTHEAST, NORTHWEST );
+		} 
+		//THE FOLLOWING CASES NEED TO BE CORRECTED, BECAUSE THE CURRENT IMPLEMENTATION DOES NOT ALLOW NODES TO HAVE 2 BORDERS
+		else if( borderflags == (f_no | f_so | f_sw | f_nw) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			AddConnection( L, borders, node->GetConnectedNode(EAST), SOUTH, NORTH );
+			//AddConnection( L, borders, node, WEST, NORTHEAST );
+			//AddConnection( L, borders, node, SOUTHEAST, WEST );
+		}
+		else if( borderflags == (f_no | f_ne | f_se | f_so) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			AddConnection( L, borders, node->GetConnectedNode(WEST), NORTH, SOUTH );
+			//AddConnection( L, borders, node, NORTHWEST, EAST );
+			//AddConnection( L, borders, node, EAST, SOUTHWEST );
+		}
+		else if( borderflags == (f_ne | f_ea | f_we | f_nw) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			AddConnection( L, borders, node->GetConnectedNode(SOUTH), WEST, EAST );
+			//AddConnection( L, borders, node, NORTH, SOUTHEAST );
+			//AddConnection( L, borders, node, SOUTHWEST, NORTH );
+		}
+		else if( borderflags == (f_ea | f_se | f_sw | f_we) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			AddConnection( L, borders, node->GetConnectedNode(NORTH), EAST, WEST );
+			//AddConnection( L, borders, node, NORTHEAST, SOUTH );
+			//AddConnection( L, borders, node, SOUTH, NORTHWEST );
+		} //triangle corners
+		else if( (borderflags & (f_ea | f_se | f_so | f_sw | f_we)) == (f_ea | f_se | f_we) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(NORTH) );
+			//AddConnection( L, borders, node, SOUTHWEST, SOUTH );
+			//if( (borderflags & (f_no | f_ne | f_nw)) == 0 )
+			//	AddConnection( L, borders, node, NORTHEAST, NORTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so)) == (f_no | f_ne | f_so) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(WEST) );
+			//AddConnection( L, borders, node, SOUTHEAST, EAST );
+			//if( (borderflags & (f_sw | f_we | f_nw)) == 0 )
+			//	AddConnection( L, borders, node, NORTHWEST, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_we | f_nw)) == (f_ea | f_we | f_nw) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(SOUTH) );
+			//AddConnection( L, borders, node, NORTHEAST, NORTH );
+			//if( (borderflags & (f_se | f_so | f_sw)) == 0 )
+			//	AddConnection( L, borders, node, SOUTHWEST, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_so | f_sw | f_we | f_nw)) == (f_no | f_so | f_sw) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(EAST) );
+			//AddConnection( L, borders, node, NORTHWEST, WEST );
+			//if( (borderflags & (f_ne | f_ea | f_se)) == 0 )
+			//	AddConnection( L, borders, node, SOUTHEAST, NORTHEAST );
+		} //flipped triangle corners
+		else if( (borderflags & (f_ea | f_se | f_so | f_sw | f_we)) == (f_ea | f_sw | f_we) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(NORTH) );
+			//AddConnection( L, borders, node, SOUTH, SOUTHEAST );
+			//if( (borderflags & (f_no | f_ne | f_nw)) == 0 )
+			//	AddConnection( L, borders, node, NORTHEAST, NORTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_se | f_so)) == (f_no | f_se | f_so) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(WEST) );
+			//AddConnection( L, borders, node, EAST, NORTHEAST );
+			//if( (borderflags & (f_sw | f_we | f_nw)) == 0 )
+			//	AddConnection( L, borders, node, NORTHWEST, SOUTHWEST );
+		}
+		else if( (borderflags & (f_no | f_ne | f_ea | f_we | f_nw)) == (f_ea | f_ne | f_we) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(SOUTH) );
+			//AddConnection( L, borders, node, NORTH, NORTHWEST );
+			//if( (borderflags & (f_se | f_so | f_sw)) == 0 )
+			//	AddConnection( L, borders, node, SOUTHWEST, SOUTHEAST );
+		}
+		else if( (borderflags & (f_no | f_so | f_sw | f_we | f_nw)) == (f_no | f_so | f_nw) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(EAST) );
+			//AddConnection( L, borders, node, WEST, SOUTHWEST );
+			//if( (borderflags & (f_ne | f_ea | f_se)) == 0 )
+			//	AddConnection( L, borders, node, SOUTHEAST, NORTHEAST );
+		}
+		else if( borderflags == (f_ea | f_we) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(NORTH) );
+			borderNodes.AddToTail( node->GetConnectedNode(SOUTH) );
+			//AddConnection( L, borders, node, SOUTHWEST, SOUTHEAST );
+			//AddConnection( L, borders, node, NORTHEAST, NORTHWEST );
+		}
+		else if( borderflags == (f_no | f_so) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(EAST) );
+			borderNodes.AddToTail( node->GetConnectedNode(WEST) );
+			//AddConnection( L, borders, node, SOUTHEAST, NORTHEAST );
+			//AddConnection( L, borders, node, NORTHWEST, SOUTHWEST );
+		}
+		else if( borderflags == (f_ne | f_so ) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(WEST) );
+		}
+		else if( borderflags == (f_ea | f_nw ) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(SOUTH) );
+		}
+		else if( borderflags == (f_no | f_sw ) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(EAST) );
+		}
+		else if( borderflags == (f_se | f_we ) )
+		{
+			node->SetStatus( NULL, 0, node->GetScoreG() );
+			borderNodes.AddToTail( node->GetConnectedNode(NORTH) );
+		}
+		
+	}
+
+	//Build result table for Lua
+	for( int i = 0; i < borders.Count(); i++ )
+	{
+		ResultTable = Lua()->GetObject(3); //get the result table to survive past 510 calls
+		Border *border = borders.Element(i);
+		ILuaObject *tbl = Lua()->GetNewTable(); //create a new lua table for this border
+		int nodeCount = 1;
+		int empireID = 0;
+		Node *start = border->tail;
+		Node *current = start;
+		while( current )
+		{
+			empireID = current->GetScoreF();
+
+			GMOD_PushVector(L, (Vector&)*(current->GetPosition()));
+				ILuaObject *obj = Lua()->GetObject();
+				tbl->SetMember(nodeCount++, obj);
+				obj->UnReference();
+			Lua()->Pop();
+
+			current = current->GetNext();
+			if( current == start )
+			{
+				GMOD_PushVector(L, (Vector&)*(current->GetPosition()));
+					ILuaObject *obj = Lua()->GetObject();
+					tbl->SetMember(nodeCount++, obj);
+					obj->UnReference();
+				Lua()->Pop();
+				break;
+			}
+		}
+
+		tbl->SetMember("empireID", (float)empireID);
+		ResultTable->SetMember((float)(count++), tbl);
+		ResultTable->UnReference();
+		tbl->UnReference();
+	}
+	borders.PurgeAndDeleteElements();
+
+	lock.Unlock();
+}
+
+int Nav::GetTerritory(const Vector &pos)
+{
+	Node *node = GetClosestNode(pos);
+	if(!node)
+	{
+		return 0;
+	}
+	return node->GetScoreF();
+}
+#endif

@@ -763,6 +763,28 @@ LUA_FUNCTION(Nav_RemoveNode)
 	return 0;
 }
 
+#ifdef SASSILIZATION
+LUA_FUNCTION(Nav_Flood)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, Type::TABLE);
+	
+	GetNav(L, 1)->Flood(L, Lua()->GetAllTableMembers(2));
+
+	return 1;
+}
+
+LUA_FUNCTION(Nav_GetTerritory)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, Type::VECTOR);
+	
+	Lua()->Push((float)(GetNav(L, 1)->GetTerritory(GMOD_GetVector(L, 2))));
+
+	return 1;
+}
+#endif
+
 ///////////////////////////////////////////////
 
 LUA_FUNCTION(Node__eq)
@@ -1066,6 +1088,12 @@ int Init(lua_State* L)
 			NavIndex->SetMember("SetMask", Nav_SetMask);
 			NavIndex->SetMember("CreateNode", Nav_CreateNode);
 			NavIndex->SetMember("RemoveNode", Nav_RemoveNode);
+
+#ifdef SASSILIZATION
+			NavIndex->SetMember("Flood", Nav_Flood);
+			NavIndex->SetMember("GetTerritory", Nav_GetTerritory);
+#endif
+
 		MetaNav->SetMember("__index", NavIndex);
 		NavIndex->UnReference();
 	MetaNav->UnReference();

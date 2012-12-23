@@ -108,6 +108,12 @@ public:
 	void SetStart(Node *start);
 	void SetEnd(Node *end);
 
+#ifdef SASSILIZATION
+	void AddConnection(lua_State* L, CUtlVector<Border*> &borders, Node *node, NavDirType nextDir, NavDirType prevDir );
+	void Flood(lua_State* L, CUtlLuaVector* pairs);
+	int GetTerritory(const Vector &pos);
+#endif
+
 	enum heuristic
 	{
 		HEURISTIC_MANHATTAN,

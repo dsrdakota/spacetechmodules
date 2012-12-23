@@ -8,6 +8,8 @@
 
 #define USE_BOOST_THREADS
 
+#define SASSILIZATION
+
 //#define FILEBUG
 #define FILEBUG_WRITE(...) if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE) { filesystem->FPrintf(fh, __VA_ARGS__);  filesystem->Flush(fh); }
 
