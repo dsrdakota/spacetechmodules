@@ -15,6 +15,7 @@ extern IThreadPool *threadPool;
 #endif
 
 extern FileHandle_t fh;
+extern FILE* pDebugFile;
 
 class GMOD_TraceFilter : public CTraceFilter
 {
@@ -841,47 +842,48 @@ bool Nav::Save(const char *Filename)
 		return false;
 	}
 
-	CUtlBuffer buf;
+	char path[MAX_PATH];
+	Q_snprintf(path, MAX_PATH, "garrysmod/%s", Filename);
+
+	FILE *pFile = fopen(path, "w");
+	if(pFile == NULL)
+	{
+		return false;
+	}
 
 	Node *node, *connection;
 
-	int TotalConnections = 0;
-	int NodeTotal = nodes.Count();
+	int iNodeConnections = 0;
+	int iNodeTotal = nodes.Count();
 
 	// Save current nav file version
-	// buf.PutInt(NAV_VERSION);
+	fprintf(pFile, "GM_NAVIGATION\t%d\n", NAV_VERSION);
 
-	//////////////////////////////////////////////
-	// nodes
-	buf.PutInt(NodeTotal);
+	////////////////
+	// Nodes
+	fprintf(pFile, "%d\n", iNodeTotal);
 
-	for(int i = 0; i < NodeTotal; i++)
+	for(int i = 0; i < iNodeTotal; i++)
 	{
 		node = nodes[i];
 
-		buf.PutFloat(node->vecPos.x);
-		buf.PutFloat(node->vecPos.y);
-		buf.PutFloat(node->vecPos.z);
-
-		buf.PutFloat(node->vecNormal.x);
-		buf.PutFloat(node->vecNormal.y);
-		buf.PutFloat(node->vecNormal.z);
+		fprintf(pFile, "%f\t%f\t%f\t%f\t%f\t%f\n", node->vecPos.x, node->vecPos.y, node->vecPos.z, node->vecNormal.x, node->vecNormal.y, node->vecNormal.z);
 
 		for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
 		{
 			if(node->GetConnectedNode((NavDirType)Dir) != NULL)
 			{
-				TotalConnections++;
+				iNodeConnections++;
 			}
 		}
 	}
-	//////////////////////////////////////////////
+	////////////////
 
-	//////////////////////////////////////////////
+	////////////////
 	// Connections
-	buf.PutInt(TotalConnections);
+	fprintf(pFile, "%d\n", iNodeConnections);
 
-	for(int i = 0; i < NodeTotal; i++)
+	for(int i = 0; i < iNodeTotal; i++)
 	{
 		node = nodes[i];
 		for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
@@ -889,43 +891,13 @@ bool Nav::Save(const char *Filename)
 			connection = node->GetConnectedNode((NavDirType)Dir);
 			if(connection != NULL)
 			{
-				buf.PutInt(Dir);
-				buf.PutInt(node->GetID());
-				buf.PutInt(connection->GetID());
+				fprintf(pFile, "%d\t%d\t%d\n", Dir, node->GetID(), connection->GetID());
 			}
 		}
 	}
-	//////////////////////////////////////////////
+	////////////////
 
-	//////////////////////////////////////////////
-	// Write File
-
-	if(filesystem == NULL)
-	{
-		return false;
-		/*
-		char writePath[MAX_PATH];
-		Q_snprintf(writePath, MAX_PATH, "garrysmod/%s", Filename);
-
-		FILE *pFile = fopen(writePath, "wb");
-		fwrite(buf.Base(), 1, buf.TellPut(), pFile);
-		fclose(pFile);
-		*/
-	}
-	else
-	{
-		FileHandle_t fh = filesystem->Open(Filename, "a+");
-
-		if(!fh)
-		{
-			return false;
-		}
-
-		filesystem->Write(buf.Base(), buf.TellPut(), fh);
-		filesystem->Close(fh);
-	}
-
-	//////////////////////////////////////////////
+	fclose(pFile);
 
 	return true;
 }
@@ -937,108 +909,50 @@ bool Nav::Load(const char *Filename)
 		return false;
 	}
 
-	CUtlBuffer buf;
+	char path[MAX_PATH];
+	Q_snprintf(path, MAX_PATH, "garrysmod/%s", Filename);
 
-	if(filesystem != NULL)
-	{
-		if(!filesystem->ReadFile(Filename, "MOD", buf))
-		{
-			return false;
-		}
-	}
-	else
+	FILE *pFile = fopen(path , "r");
+	if(pFile == NULL)
 	{
 		return false;
-		
-		char readPath[MAX_PATH];
-		Q_snprintf(readPath, MAX_PATH, "garrysmod/%s", Filename);
-
-		FILE *pFile = fopen(readPath , "rb");
-		if(pFile == NULL)
-		{
-			return false;
-		}
-
-		fseek(pFile, 0, SEEK_END);
-
-		long fileSize = ftell(pFile);
-
-		fseek(pFile, 0, SEEK_SET);
-
-		/*
-		unsigned char *buffer = (unsigned char*)malloc(lSize * sizeof(unsigned char));
-		if(fread(buffer, sizeof(unsigned char), lSize, pFile) != lSize)
-		{
-			return false;
-		}
-
-		fclose(pFile);
-
-		CUtlBuffer buf(buffer, lSize * sizeof(unsigned char));
-		//buf.Put(buffer, lSize * sizeof(unsigned char));
-
-		buf.SeekGet(CUtlBuffer::SEEK_HEAD, 0);
-		*/
-
-		CUtlBuffer buf;
-
-		buf.EnsureCapacity(fileSize);
-
-		int nBytesRead = fread(buf.Base(), 1, fileSize, pFile);
-
-		fclose(pFile);
-
-		buf.SeekPut(CUtlBuffer::SEEK_HEAD, nBytesRead);
 	}
 
 	Node *node;
-	int Dir, SrcID, DestID;
 
 	nodes.RemoveAll();
 
-	//int fileVersion = buf.GetInt();
+	int fileVersion;
+	fscanf(pFile, "GM_NAVIGATION\t%d\n", &fileVersion);
 
-	//////////////////////////////////////////////
-	// nodes
-	int NodeTotal = buf.GetInt();
+	////////////////
+	// Nodes
 
-	//FILEBUG_WRITE("total: %d\n", NodeTotal);
+	int iNodeTotal;
+	fscanf(pFile, "%d\n", &iNodeTotal);
 
-	for(int i = 0; i < NodeTotal; i++)
+	for(int i = 0; i < iNodeTotal; i++)
 	{
-		//FILEBUG_WRITE("Reading node");
+		Vector pos, normal;
 
-		Vector Pos, Normal;
-		Pos.x = buf.GetFloat();
-		Pos.y = buf.GetFloat();
-		Pos.z = buf.GetFloat();
+		fscanf(pFile, "%f\t%f\t%f\t%f\t%f\t%f\n", &pos.x, &pos.y, &pos.z, &normal.x, &normal.y, &normal.z);
 
-		Normal.x = buf.GetFloat();
-		Normal.y = buf.GetFloat();
-		Normal.z = buf.GetFloat();
+		node = new Node(pos, normal, NULL);
 
-		node = new Node(Pos, Normal, NULL);
 		node->SetID(nodes.AddToTail(node));
-
-		//FILEBUG_WRITE("...Read node\n");
 	}
-	//////////////////////////////////////////////
+	////////////////
 
-	//////////////////////////////////////////////
+	////////////////
 	// Connections
-	//FILEBUG_WRITE("TotalConnections\n");
 
-	int TotalConnections = buf.GetInt();
+	int iTotalConnections;
+	fscanf(pFile, "%d\n", &iTotalConnections);
 
-	//FILEBUG_WRITE("TotalConnections: %d", TotalConnections);
-
-	for(int i = 0; i < TotalConnections; i++)
+	int Dir, SrcID, DestID;
+	for(int i = 0; i < iTotalConnections; i++)
 	{
-		Dir = buf.GetInt();
-		SrcID = buf.GetInt();
-		DestID = buf.GetInt();
-		
-		//FILEBUG_WRITE("TotalConnections: %d %d %d\n", Dir, SrcID, DestID);
+		fscanf(pFile, "%d\t%d\t%d\n", &Dir, &SrcID, &DestID);
 
 		// Should never be a problem...
 		if(Dir <= NUM_DIRECTIONS_MAX - 1 && DestID - 1 <= nodes.Count() && SrcID - 1 <= nodes.Count())
@@ -1051,9 +965,7 @@ bool Nav::Load(const char *Filename)
 		}
 	}
 
-	//FILEBUG_WRITE("Done\n");
-
-	//////////////////////////////////////////////
+	////////////////
 
 	return true;
 }
@@ -1065,23 +977,24 @@ CUtlVector<Node*>& Nav::GetNodes()
 
 Node *Nav::GetClosestNode(const Vector &Pos)
 {
-	float NodeDist;
-	float Distance = -1;
+	float fNodeDist;
+	float fDistance = -1;
 	
-	Node *Node, *ClosestNode;
+	Node *pNode = NULL;
+	Node *pNodeClosest = NULL;
 
 	for(int i = 0; i < nodes.Count(); i++)
 	{
-		Node = nodes[i];
-		NodeDist = Pos.DistTo(Node->vecPos);
-		if(Distance == -1 || NodeDist < Distance)
+		pNode = nodes[i];
+		fNodeDist = Pos.DistTo(pNode->vecPos);
+		if(fDistance == -1 || fNodeDist < fDistance)
 		{
-			ClosestNode = Node;
-			Distance = NodeDist;
+			pNodeClosest = pNode;
+			fDistance = fNodeDist;
 		}
 	}
 
-	return ClosestNode;
+	return pNodeClosest;
 }
 
 void Nav::Reset()
@@ -1090,8 +1003,8 @@ void Nav::Reset()
 	for(int i = 0; i < nodes.Count(); i++)
 	{
 		node = nodes[i];
-		node->SetClosed(false);
 		node->SetOpened(false);
+		node->SetClosed(false);
 	}
 	opened.RemoveAll();
 	closed.RemoveAll();
@@ -1345,7 +1258,7 @@ void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node,
 {
 	if(node->GetBorder() != NULL)
 	{
-		Lua()->Error("ASSERT Failed: Node border was not null");
+		//Lua()->Error("ASSERT Failed: Node border was not null");
 		return;
 	}
 
@@ -1431,11 +1344,13 @@ void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node,
 void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 {
 	lock.Lock();
-	Nav::Reset();
+	
+	Reset();
 
 	bool start = false;
 
 	int count = 1;
+
 	ILuaObject *ResultTable = Lua()->GetNewTable();
 	ResultTable->Push();
 	ResultTable->UnReference();
@@ -1445,33 +1360,48 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 	{
 		LuaKeyValue& entry = pairs->Element(i);
 
-		Lua()->Push(entry.pValue);
-
-		if(Lua()->GetType(-1) != Type::TABLE)
+		if(entry.pValue->GetType() != Type::TABLE)
 		{
-			Lua()->Pop();
 			Lua()->DeleteLuaVector(pairs);
 			Lua()->Error("Nav:Flood value is not a table.\n");
 			return;
 		}
-
+		
 		ILuaObject *t_node = entry.pValue->GetMember(1);
 		ILuaObject *t_pid = entry.pValue->GetMember(2);
 		ILuaObject *t_score = entry.pValue->GetMember(3);
 
-		if( t_node->GetType() != NODE_TYPE ||
-			t_pid->GetType() != Type::NUMBER ||
-			t_score->GetType() != Type::NUMBER )
+		if( t_node->GetType() != NODE_TYPE)
 		{
-			Lua()->Pop();
 			Lua()->DeleteLuaVector(pairs);
 
 			t_node->UnReference();
 			t_pid->UnReference();
 			t_score->UnReference();
 
-			Lua()->Error("Nav:Flood table values incorrect, expected (node,number,number).\n");
-			return;
+			Lua()->Error("Nav:Flood table values incorrect, 1st\n");	
+		}
+
+		if( t_pid->GetType() != Type::NUMBER)
+		{
+			Lua()->DeleteLuaVector(pairs);
+
+			t_node->UnReference();
+			t_pid->UnReference();
+			t_score->UnReference();
+
+			Lua()->Error("Nav:Flood table values incorrect, 2nd\n");
+		}
+
+		if( t_score->GetType() != Type::NUMBER)
+		{
+			Lua()->DeleteLuaVector(pairs);
+
+			t_node->UnReference();
+			t_pid->UnReference();
+			t_score->UnReference();
+
+			Lua()->Error("Nav:Flood table values incorrect, 3rd\n");
 		}
 
 		Node* node = (Node*)t_node->GetUserData();
@@ -1485,8 +1415,6 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 		t_node->UnReference();
 		t_pid->UnReference();
 		t_score->UnReference();
-
-		Lua()->Pop();
 	}
 
 	Lua()->DeleteLuaVector(pairs);
@@ -1508,6 +1436,8 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 		AddClosedNode(current);
 		closed.AddToTail(current);
 		
+		//Msg("current: %f | %f\n", current->GetScoreF(), current->GetScoreG());
+
 		for(int Dir = NORTH; Dir < NUM_DIRECTIONS; Dir++)
 		{
 			Node *connection = current->GetConnectedNode((NavDirType)Dir);
@@ -1535,6 +1465,7 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 			{
 				connection->SetStatus( current, current->GetScoreF(), newScoreG );
 				AddOpenedNode( connection );
+				//Msg("added connection\n");
 			}
 		}
 	}
@@ -1557,7 +1488,10 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 			if(connection->GetScoreF() != current->GetScoreF())
 			{
 				if( !borderNodes.HasElement(current) )
+				{
 					borderNodes.AddToTail(current);
+					//Msg("added border node\n");
+				}
 				break;
 			}
 		}
@@ -1896,6 +1830,8 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 		}
 		
 	}
+
+	//Msg("Borders: %d\n", borders.Count());
 
 	//Build result table for Lua
 	for( int i = 0; i < borders.Count(); i++ )

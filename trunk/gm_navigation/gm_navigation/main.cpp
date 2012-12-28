@@ -769,7 +769,9 @@ LUA_FUNCTION(Nav_Flood)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, Type::TABLE);
 	
-	GetNav(L, 1)->Flood(L, Lua()->GetAllTableMembers(2));
+	ILuaObject* tab = Lua()->GetObject(2);
+	
+	GetNav(L, 1)->Flood(L, tab->GetMembers()); //Lua()->GetAllTableMembers(2));
 
 	return 1;
 }
@@ -1156,7 +1158,14 @@ int Init(lua_State* L)
 #endif
 
 #ifdef FILEBUG
-	fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+	if(filesystem == NULL)
+	{
+		pDebugFile = fopen("garrysmod/data/nav/filebug.txt", "a+");
+	}
+	else
+	{
+		fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
+	}
 	FILEBUG_WRITE("Opened Module\n");
 #endif
 
@@ -1210,6 +1219,11 @@ int Shutdown(lua_State* L)
 	{
 		filesystem->FPrintf(fh, "Closed Module\n");
 		filesystem->Close(fh);
+	}
+	else if(pDebugFile != NULL)
+	{
+		fputs("Closed Module\n", pDebugFile);
+		fclose(pDebugFile);
 	}
 #endif
 

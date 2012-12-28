@@ -11,7 +11,8 @@
 #define SASSILIZATION
 
 //#define FILEBUG
-#define FILEBUG_WRITE(...) if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE) { filesystem->FPrintf(fh, __VA_ARGS__);  filesystem->Flush(fh); }
+
+#define FILEBUG_WRITE(...) if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE) { filesystem->FPrintf(fh, __VA_ARGS__);  filesystem->Flush(fh); } else if(pFile != NULL) { fprintf(pDebugFile, __VA_ARGS__); fflush(pDebugFile); }
 
 // Version for save files
 #define NAV_VERSION 1
@@ -33,7 +34,7 @@ enum NavDirType
 	SOUTHEAST = 6,
 	SOUTHWEST = 7,
 
-	// I'm imagining it like I'm looking straight at it, up being the z direction, which incrases in the up direction ^^
+	// I'm imagining it like I'm looking straight at it, up being the z direction, which increases in the up direction ^^
 	UP = 8,
 	DOWN = 9,
 	LEFT = 10,
