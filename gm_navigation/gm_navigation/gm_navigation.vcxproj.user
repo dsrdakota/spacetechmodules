@@ -10,4 +10,9 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release - Client|Win32'">
     <LocalDebuggerDebuggerType>Auto</LocalDebuggerDebuggerType>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release - Server|Win32'">
+    <LocalDebuggerCommand>E:\Servers\GMOD\orangebox\srcds.exe</LocalDebuggerCommand>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerAttach>true</LocalDebuggerAttach>
+  </PropertyGroup>
 </Project>

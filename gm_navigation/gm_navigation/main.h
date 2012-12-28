@@ -18,6 +18,7 @@ IThreadPool* threadPool;
 
 //#ifdef FILEBUG
 	FileHandle_t fh = FILESYSTEM_INVALID_HANDLE;
+	FILE *pDebugFile = NULL;
 //#endif
 
 IVEngineServer *engine = NULL;
