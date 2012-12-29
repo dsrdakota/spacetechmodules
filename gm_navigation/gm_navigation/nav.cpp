@@ -1244,6 +1244,7 @@ void Nav::SetEnd(Node *end)
 #ifdef SASSILIZATION
 
 void GMOD_PushVector(lua_State* L, Vector& vec);
+ILuaObject* NewVectorObject(lua_State* L, Vector& vec);
 
 bool IsTerritory(Node *node, NavDirType dir, int empire)
 {
@@ -1278,6 +1279,9 @@ void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node,
 		Border *border = new Border();
 		border->head = node;
 		border->tail = node;
+#ifdef FILEBUG
+		FILEBUG_WRITE("New Border: %d\n", node->GetID());
+#endif
 		node->SetBorder( border );
 		borders.AddToTail( border );
 		return;
@@ -1287,6 +1291,12 @@ void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node,
 	{
 		if( border1 != border2 )
 		{
+#ifdef FILEBUG
+			if(border1->head != NULL && border1->tail != NULL && border2->head != NULL && border2->tail != NULL)
+			{
+				FILEBUG_WRITE("Mering Borders: border1(%d, %d) border2(%d, %d)\n", border1->head->GetID(), border1->tail->GetID(), border2->head->GetID(), border2->tail->GetID());
+			}
+#endif
 			if( border1->head != border1->tail )
 				border1->tail->SetBorder(NULL);
 			border1->tail->SetPrev(node);
@@ -1316,6 +1326,12 @@ void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node,
 		}
 	} else if( border1 ) //connect 2 next
 	{
+#ifdef FILEBUG
+		if(border1->head != NULL && border1->tail != NULL)
+		{
+			FILEBUG_WRITE("Connecting 1: border1(%d, %d)\n", border1->head->GetID(), border1->tail->GetID());
+		}
+#endif
 		if( border1->head != border1->tail )
 			border1->tail->SetBorder(NULL);
 		border1->tail->SetPrev(node);
@@ -1325,6 +1341,12 @@ void Nav::AddConnection( lua_State* L, CUtlVector<Border*> &borders, Node *node,
 	}
 	else //( border2 ) //connect to prev
 	{
+#ifdef FILEBUG
+		if(border2->head != NULL && border2->tail != NULL)
+		{
+			FILEBUG_WRITE("Connecting 2: border2(%d, %d)\n", border2->head->GetID(), border2->tail->GetID());
+		}
+#endif
 		if( border2->head != border2->tail )
 			border2->head->SetBorder(NULL);
 		border2->head->SetNext(node);
@@ -1511,6 +1533,10 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 	for(int i = 0; i < borderNodes.Count(); i++)
 	{
 		node = borderNodes[i];
+
+#ifdef FILEBUG
+		FILEBUG_WRITE("borderNodes %d: %d\n", i, node->GetID());
+#endif
 
 		borderflags = 0;
 		int empire = (int)node->GetScoreF();
@@ -1834,45 +1860,63 @@ void Nav::Flood(lua_State* L, CUtlLuaVector* pairs)
 	//Msg("Borders: %d\n", borders.Count());
 
 	//Build result table for Lua
+
+	/*
+	for(int i=0; i <= Lua()->Top(); i++)
+	{
+		Msg("%d Type: %s\n", i, Lua()->GetTypeName(Lua()->GetType(i)));
+	}
+	Msg("\n");*/
+
 	for( int i = 0; i < borders.Count(); i++ )
 	{
 		ResultTable = Lua()->GetObject(3); //get the result table to survive past 510 calls
+
 		Border *border = borders.Element(i);
+
 		ILuaObject *tbl = Lua()->GetNewTable(); //create a new lua table for this border
+
 		int nodeCount = 1;
 		int empireID = 0;
 		Node *start = border->tail;
 		Node *current = start;
+
 		while( current )
 		{
 			empireID = current->GetScoreF();
 
-			GMOD_PushVector(L, (Vector&)*(current->GetPosition()));
-				ILuaObject *obj = Lua()->GetObject();
-				tbl->SetMember(nodeCount++, obj);
-				obj->UnReference();
-			Lua()->Pop();
+			ILuaObject* obj = NewVectorObject(L, (Vector&)*(current->GetPosition()));
+
+			tbl->SetMember(nodeCount++, obj);
+			obj->UnReference();
 
 			current = current->GetNext();
 			if( current == start )
 			{
-				GMOD_PushVector(L, (Vector&)*(current->GetPosition()));
-					ILuaObject *obj = Lua()->GetObject();
-					tbl->SetMember(nodeCount++, obj);
-					obj->UnReference();
-				Lua()->Pop();
+				ILuaObject* obj = NewVectorObject(L, (Vector&)*(current->GetPosition()));
+				tbl->SetMember(nodeCount++, obj);
+				obj->UnReference();
 				break;
 			}
 		}
 
 		tbl->SetMember("empireID", (float)empireID);
+
 		ResultTable->SetMember((float)(count++), tbl);
+
 		ResultTable->UnReference();
+
 		tbl->UnReference();
 	}
+
 	borders.PurgeAndDeleteElements();
 
 	lock.Unlock();
+	/*
+	for(int i=0; i <= Lua()->Top(); i++)
+	{
+		Msg("%d Type: %s\n", i, Lua()->GetTypeName(Lua()->GetType(i)));
+	}*/
 }
 
 int Nav::GetTerritory(const Vector &pos)

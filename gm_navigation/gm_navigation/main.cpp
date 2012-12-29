@@ -26,16 +26,16 @@ ILuaObject* NewVectorObject(lua_State* L, Vector& vec)
 	{
 		// @azuisleet Get a reference to the function to survive past 510 calls!
 		ILuaObject *VectorMeta = Lua()->GetGlobal("Vector");
-			VectorMeta->Push();
-			VectorMetaRef = Lua()->GetReference(-1);
-		VectorMeta->UnReference();
+			VectorMetaRef = VectorMeta->GetReference();
+		//VectorMeta->UnReference();
 	}
 
 	Lua()->PushReference(VectorMetaRef);
-	
+
 	if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
 	{
 		//Msg("gm_navigation error: Not a function: %i\n", Lua()->GetType(-1));
+		Lua()->Pop();
 		Lua()->Push(Lua()->GetGlobal("Vector"));
 	}
 
