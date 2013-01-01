@@ -15,30 +15,19 @@ typedef CUtlVector<Node*> NodeList_t;
 
 CUtlVector<JobInfo_t*> JobQueue;
 
-int VectorMetaRef = NULL;
-
 ///////////////////////////////////////////////
 // @Jinto (Referenced by Spacetech)
 
+ILuaObject *objVector = NULL;
+
 ILuaObject* NewVectorObject(lua_State* L, Vector& vec)
 {
-	if(VectorMetaRef == NULL)
+	if(objVector == NULL)
 	{
-		// @azuisleet Get a reference to the function to survive past 510 calls!
-		ILuaObject *VectorMeta = Lua()->GetGlobal("Vector");
-			VectorMetaRef = VectorMeta->GetReference();
-		//VectorMeta->UnReference();
+		objVector = Lua()->GetGlobal("Vector");
 	}
 
-	Lua()->PushReference(VectorMetaRef);
-
-	if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
-	{
-		//Msg("gm_navigation error: Not a function: %i\n", Lua()->GetType(-1));
-		Lua()->Pop();
-		Lua()->Push(Lua()->GetGlobal("Vector"));
-	}
-
+	objVector->Push();
 		Lua()->Push(vec.x);
 		Lua()->Push(vec.y);
 		Lua()->Push(vec.z);
@@ -81,24 +70,53 @@ LUA_FUNCTION(nav_Poll)
 	{
 		JobInfo_t* info = JobQueue[i];
 #ifdef USE_BOOST_THREADS
-		if(info->thread.timed_join(timeout))
+		if(info->finished || info->thread.timed_join(timeout))
 #else
 		if(info->job->IsFinished())
 #endif
 		{
-			Lua()->PushReference(info->funcRef);
+#ifdef FILEBUG
+			FILEBUG_WRITE("Job Finished\n");
+#endif
+
+			info->objFunc->Push();
+#ifdef FILEBUG
+			FILEBUG_WRITE("Pushed Reference\n");
+#endif
 
 			if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
 			{
-				//Lua()->ErrorNoHalt("type isn't a func? %d", info->funcRef);
+				Lua()->Pop();
+				info->finished = true;
+#ifdef FILEBUG
+				FILEBUG_WRITE("Not a function!?\n");
+#endif
+
+				// Emergency abort :/
+				delete info;
+				JobQueue.Remove(i);
+
+				i = 0;
+
 				continue;
 			}
-			//Lua()->ErrorNoHalt("func? %d", info->funcRef);
+
+#ifdef FILEBUG
+			FILEBUG_WRITE("Pushing nav\n");
+#endif
 
 			LUA_PushNav(L, info->nav);
 
+#ifdef FILEBUG
+			FILEBUG_WRITE("Pushed nav\n");
+#endif
+
 			if(info->findPath)
 			{
+#ifdef FILEBUG
+				FILEBUG_WRITE("Find Path\n");
+#endif
+
 				Lua()->Push(info->foundPath);
 
 				ILuaObject *pathTable = Lua()->GetNewTable();
@@ -117,18 +135,37 @@ LUA_FUNCTION(nav_Poll)
 					node->UnReference();
 				}
 
+#ifdef FILEBUG
+				FILEBUG_WRITE("Calling Callback 1\n");
+#endif
+
 				Lua()->Call(3);
+
+#ifdef FILEBUG
+				FILEBUG_WRITE("Calling Callback 2\n");
+#endif
 			}
 			else
 			{
+#ifdef FILEBUG
+				FILEBUG_WRITE("Calling Callback 3\n");
+#endif
 				Lua()->Call(1);
+
+#ifdef FILEBUG
+				FILEBUG_WRITE("Calling Callback 4\n");
+#endif
 			}
 
-			Lua()->FreeReference(info->funcRef);
+#ifdef FILEBUG
+			FILEBUG_WRITE("Freeing Reference\n");
+#endif
 
-			if(info->updateRef != -1)
+			info->objFunc->UnReference();
+
+			if(info->objUpdate != NULL)
 			{
-				Lua()->FreeReference(info->updateRef);
+				info->objUpdate->UnReference();
 			}
 
 #ifndef USE_BOOST_THREADS
@@ -137,6 +174,12 @@ LUA_FUNCTION(nav_Poll)
 
 			delete info;
 			JobQueue.Remove(i);
+
+			i = 0;
+
+#ifdef FILEBUG
+			FILEBUG_WRITE("Job Completely Finished\n");
+#endif
 		}
 		else if(!info->findPath && info->updateTime > 0)
 		{
@@ -144,9 +187,10 @@ LUA_FUNCTION(nav_Poll)
 
 			if(difftime(now, info->updateTime) >= 1)
 			{
-				Lua()->PushReference(info->updateRef);
+				info->objUpdate->Push();
 				if(Lua()->GetType(-1) != GLua::TYPE_FUNCTION)
 				{
+					Lua()->Pop();
 					continue;
 				}
 				LUA_PushNav(L, info->nav);
@@ -315,7 +359,22 @@ LUA_FUNCTION(Nav_Generate)
 	Nav *nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
+	info->nav = nav;
 	info->abort = false;
+	info->finished = false;
+	info->findPath = false;
+	info->objFunc = Lua()->GetObject(2);
+
+	if(Lua()->GetType(3) == GLua::TYPE_FUNCTION)
+	{
+		info->objUpdate = Lua()->GetObject(3);
+		info->updateTime = time(NULL);
+	}
+	else
+	{
+		info->objUpdate = NULL;
+		info->updateTime = 0;
+	}
 
 	nav->GenerateQueue(info);
 
@@ -323,21 +382,6 @@ LUA_FUNCTION(Nav_Generate)
 	if(info->job != NULL)
 	{
 #endif
-		info->nav = nav;
-		info->findPath = false;
-		info->funcRef = Lua()->GetReference(2);
-
-		if(Lua()->GetType(3) == GLua::TYPE_FUNCTION)
-		{
-			info->updateRef = Lua()->GetReference(3);
-			info->updateTime = time(NULL);
-		}
-		else
-		{
-			info->updateRef = -1;
-			info->updateTime = 0;
-		}
-
 		JobQueue.AddToTail(info);
 #ifndef USE_BOOST_THREADS
 	}
@@ -346,6 +390,7 @@ LUA_FUNCTION(Nav_Generate)
 #ifdef FILEBUG
 		FILEBUG_WRITE("Invalid job!\n");
 #endif
+		// free ref info->updateRef
 		delete info;
 	}
 	Lua()->Push((bool)(job != NULL));
@@ -393,6 +438,13 @@ LUA_FUNCTION(Nav_FindPath)
 	Nav* nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
+	info->nav = nav;
+	info->abort = false;
+	info->finished = false;
+	info->findPath = true;
+	info->hull = false;
+	info->objFunc = Lua()->GetObject(2);
+	info->objUpdate = NULL;
 
 	nav->FindPathQueue(info);
 
@@ -400,17 +452,12 @@ LUA_FUNCTION(Nav_FindPath)
 	if(info->job != NULL)
 	{
 #endif
-		info->nav = nav;
-		info->abort = false;
-		info->findPath = true;
-		info->hull = false;
-		info->funcRef = Lua()->GetReference(2);
-
 		JobQueue.AddToTail(info);
 #ifndef USE_BOOST_THREADS
 	}
 	else
 	{
+		// free ref info->funcRef
 		delete info;
 	}
 
@@ -431,6 +478,7 @@ LUA_FUNCTION(Nav_FindPathImmediate)
 	JobInfo_t *info = new JobInfo_t;
 	info->nav = nav;
 	info->abort = false;
+	info->finished = false;
 	info->findPath = true;
 	info->hull = false;
 
@@ -473,7 +521,16 @@ LUA_FUNCTION(Nav_FindPathHull)
 
 	Nav* nav = LUA_GetNav(L, 1);
 
-	JobInfo_t *info = new JobInfo_t();
+	JobInfo_t *info = new JobInfo_t;
+	info->nav = nav;
+	info->abort = false;
+	info->finished = false;
+	info->findPath = true;
+	info->hull = true;
+	info->mins = LUA_GetVector(L, 2);
+	info->maxs = LUA_GetVector(L, 3);
+	info->objFunc = Lua()->GetObject(4);
+	info->objUpdate = NULL;
 
 	nav->FindPathQueue(info);
 
@@ -481,19 +538,12 @@ LUA_FUNCTION(Nav_FindPathHull)
 	if(info->job != NULL)
 	{
 #endif
-		info->nav = nav;
-		info->abort = false;
-		info->findPath = true;
-		info->hull = true;
-		info->mins = LUA_GetVector(L, 2);
-		info->maxs = LUA_GetVector(L, 3);
-		info->funcRef = Lua()->GetReference(4);
-
 		JobQueue.AddToTail(info);
 #ifndef USE_BOOST_THREADS
 	}
 	else
 	{
+		// free ref info->funcRef
 		delete info;
 	}
 
@@ -516,6 +566,7 @@ LUA_FUNCTION(Nav_FindPathHullImmediate)
 	JobInfo_t *info = new JobInfo_t;
 	info->nav = nav;
 	info->abort = false;
+	info->finished = false;
 	info->findPath = true;
 	info->hull = true;
 	info->mins = LUA_GetVector(L, 2);
@@ -1086,26 +1137,39 @@ int Init(lua_State* L)
 int Shutdown(lua_State* L)
 {
 #ifdef USE_BOOST_THREADS
+	Msg("gm_navigation: Aborting threads...\n");
 	for(int i=0; i < JobQueue.Size(); i++)
 	{
 		JobQueue[i]->abort = true;
+
 		/*
 		if(JobQueue[i]->thread.joinable())
 		{
 			JobQueue[i]->thread.join();
 		}
 		*/
+		
+		Msg("gm_navigation: Aborting Thread %d\n", i);
 
-		Msg("gm_navigation: Aborting threads...\n");
+#ifdef FILEBUG
+		FILEBUG_WRITE("Aborting...\n");
+#endif
 
-		while(!JobQueue[i]->thread.timed_join(timeout))
+		while(!JobQueue[i]->finished && !JobQueue[i]->thread.timed_join(timeout))
 		{
 			boost::this_thread::sleep(sleep_time);
 			Msg("Waiting...\n");
 		}
 
-		Msg("gm_navigation: Done\n");
+#ifdef FILEBUG
+		FILEBUG_WRITE("Aborted\n");
+#endif
+
+		Msg("gm_navigation: Aborted\n");
 	}
+
+	Msg("gm_navigation: Done\n");
+
 #else
 	if(threadPool != NULL)
 	{
@@ -1119,10 +1183,10 @@ int Shutdown(lua_State* L)
 	}
 #endif
 
-	if(VectorMetaRef)
+	if(objVector)
 	{
-		Lua()->FreeReference(VectorMetaRef);
-		VectorMetaRef = NULL;
+		objVector->UnReference();
+		objVector = NULL;
 	}
 
 #ifdef FILEBUG
