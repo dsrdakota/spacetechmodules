@@ -5,7 +5,7 @@
 
 #include "main.h"
 
-#include "node.h"
+//#include "node.h"
 #include "nav.h"
 #include "tier0/memdbgon.h"
 
@@ -47,61 +47,16 @@ ILuaObject* NewVectorObject(lua_State* L, Vector& vec)
 	return Lua()->GetReturn(0);
 }
 
-void GMOD_PushVector(lua_State* L, Vector& vec)
+void LUA_PushVector(lua_State* L, Vector& vec)
 {
 	ILuaObject* obj = NewVectorObject(L, vec);
 		Lua()->Push(obj);
 	obj->UnReference();
 }
 
-Vector& GMOD_GetVector(lua_State* L, int stackPos)
+Vector& LUA_GetVector(lua_State* L, int stackPos)
 {
 	return *reinterpret_cast<Vector*>(Lua()->GetUserData(stackPos));
-}
-
-///////////////////////////////////////////////
-
-Nav* GetNav(lua_State* L, int Pos)
-{
-	Nav* nav = (Nav*)Lua()->GetUserData(Pos);
-	if(nav == NULL)
-	{
-		Lua()->Error("Invalid Nav");
-	}
-	return nav;
-}
-
-Node* GetNode(lua_State* L, int Pos)
-{
-	return (Node*)Lua()->GetUserData(Pos);
-}
-
-void PushNav(lua_State* L, Nav *nav)
-{
-	if(nav)
-	{
-		ILuaObject* meta = Lua()->GetMetaTable(NAV_NAME, NAV_TYPE);
-			Lua()->PushUserData(meta, nav, NAV_TYPE);
-		meta->UnReference();
-	}
-	else
-	{
-		Lua()->Push(false);
-	}
-}
-
-void PushNode(lua_State* L, Node *node)
-{
-	if(node)
-	{
-		ILuaObject* meta = Lua()->GetMetaTable(NODE_NAME, NODE_TYPE);
-			Lua()->PushUserData(meta, node, NODE_TYPE);
-		meta->UnReference();
-	}
-	else
-	{
-		Lua()->Push(false);
-	}
 }
 
 ///////////////////////////////////////////////
@@ -110,7 +65,7 @@ LUA_FUNCTION(nav_Create)
 {
 	Lua()->CheckType(1, GLua::TYPE_NUMBER);
 
-	PushNav(L, new Nav((int)Lua()->GetNumber(1)));
+	LUA_PushNav(L, new Nav((int)Lua()->GetNumber(1)));
 
 	return 1;
 }
@@ -140,7 +95,7 @@ LUA_FUNCTION(nav_Poll)
 			}
 			//Lua()->ErrorNoHalt("func? %d", info->funcRef);
 
-			PushNav(L, info->nav);
+			LUA_PushNav(L, info->nav);
 
 			if(info->findPath)
 			{
@@ -152,7 +107,7 @@ LUA_FUNCTION(nav_Poll)
 
 				for(int i = 0; i < info->path.Count(); i++)
 				{
-					PushNode(L, info->path[i]);
+					LUA_PushNode(L, info->path[i]);
 
 					ILuaObject *node = Lua()->GetObject();
 					pathTable = Lua()->GetObject(-2);
@@ -194,7 +149,7 @@ LUA_FUNCTION(nav_Poll)
 				{
 					continue;
 				}
-				PushNav(L, info->nav);
+				LUA_PushNav(L, info->nav);
 				Lua()->Push((float)info->nav->GetNodes().Size());
 				Lua()->Call(2);
 
@@ -213,7 +168,7 @@ LUA_FUNCTION(Nav_GetNodeByID)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_NUMBER);
 
-	PushNode(L, GetNav(L, 1)->GetNodeByID((int)Lua()->GetNumber(2) - 1));
+	LUA_PushNode(L, LUA_GetNav(L, 1)->GetNodeByID((int)Lua()->GetNumber(2) - 1));
 
 	return 1;
 }
@@ -222,7 +177,7 @@ LUA_FUNCTION(Nav_GetNodeTotal)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	Lua()->Push((float)GetNav(L, 1)->GetNodes().Count());
+	Lua()->Push((float)LUA_GetNav(L, 1)->GetNodes().Count());
 
 	return 1;
 }
@@ -231,7 +186,7 @@ LUA_FUNCTION(Nav_GetNodes)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	NodeList_t& Nodes = GetNav(L, 1)->GetNodes();
+	NodeList_t& Nodes = LUA_GetNav(L, 1)->GetNodes();
 
 	ILuaObject *NodeTable = Lua()->GetNewTable();
 	NodeTable->Push();
@@ -239,7 +194,7 @@ LUA_FUNCTION(Nav_GetNodes)
 
 	for(int i = 0; i < Nodes.Count(); i++)
 	{
-		PushNode(L, Nodes[i]);
+		LUA_PushNode(L, Nodes[i]);
 		ILuaObject *ObjNode = Lua()->GetObject();
 		NodeTable = Lua()->GetObject(2);
 			NodeTable->SetMember((float)i + 1, ObjNode);
@@ -251,11 +206,53 @@ LUA_FUNCTION(Nav_GetNodes)
 	return 1;
 }
 
+LUA_FUNCTION(Nav_GetNearestNodes)
+{
+	Lua()->CheckType(1, NAV_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_VECTOR);
+	Lua()->CheckType(3, GLua::TYPE_NUMBER);
+
+	Vector pos = LUA_GetVector(L, 2);
+
+	int count = 1;
+	struct kdres *results;
+	double pt[3] = { pos.x, pos.y, pos.z };
+	
+	ILuaObject *NodeTable = Lua()->GetNewTable();
+	NodeTable->Push();
+	NodeTable->UnReference();
+
+	Nav *nav = LUA_GetNav(L, 1);
+
+	if(!nav->IsGenerated())
+	{
+		return 1;
+	}
+	
+	results = kd_nearest_range(nav->GetNodeTree(), pt, Lua()->GetNumber(3));
+	while(!kd_res_end(results))
+	{
+		LUA_PushNode(L, (Node*)kd_res_item_data(results));
+		ILuaObject *ObjNode = Lua()->GetObject();
+		NodeTable = Lua()->GetObject(-2);
+			NodeTable->SetMember((float)count++, ObjNode);
+			Lua()->Pop();
+		NodeTable->UnReference();
+		ObjNode->UnReference();
+
+		kd_res_next(results);
+	}
+	
+	kd_res_free(results);
+
+	return 1;
+}
+
 LUA_FUNCTION(Nav_ResetGeneration)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	GetNav(L, 1)->ResetGeneration();
+	LUA_GetNav(L, 1)->ResetGeneration();
 
 	return 0;
 }
@@ -266,7 +263,7 @@ LUA_FUNCTION(Nav_SetupMaxDistance)
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 	Lua()->CheckType(3, GLua::TYPE_NUMBER);
 
-	GetNav(L, 1)->SetupMaxDistance(GMOD_GetVector(L, 2), Lua()->GetNumber(3));
+	LUA_GetNav(L, 1)->SetupMaxDistance(LUA_GetVector(L, 2), Lua()->GetNumber(3));
 
 	return 0;
 }
@@ -277,7 +274,7 @@ LUA_FUNCTION(Nav_AddGroundSeed)
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 	Lua()->CheckType(3, GLua::TYPE_VECTOR);
 
-	GetNav(L, 1)->AddGroundSeed(GMOD_GetVector(L, 2), GMOD_GetVector(L, 3));
+	LUA_GetNav(L, 1)->AddGroundSeed(LUA_GetVector(L, 2), LUA_GetVector(L, 3));
 
 	return 0;
 }
@@ -287,7 +284,7 @@ LUA_FUNCTION(Nav_AddAirSeed)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 
-	GetNav(L, 1)->AddAirSeed(GMOD_GetVector(L, 2));
+	LUA_GetNav(L, 1)->AddAirSeed(LUA_GetVector(L, 2));
 
 	return 0;
 }
@@ -296,7 +293,7 @@ LUA_FUNCTION(Nav_ClearGroundSeeds)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	GetNav(L, 1)->ClearGroundSeeds();
+	LUA_GetNav(L, 1)->ClearGroundSeeds();
 
 	return 0;
 }
@@ -305,7 +302,7 @@ LUA_FUNCTION(Nav_ClearAirSeeds)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	GetNav(L, 1)->ClearAirSeeds();
+	LUA_GetNav(L, 1)->ClearAirSeeds();
 
 	return 0;
 }
@@ -315,7 +312,7 @@ LUA_FUNCTION(Nav_Generate)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_FUNCTION);
 	
-	Nav *nav = GetNav(L, 1);
+	Nav *nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
 	info->abort = false;
@@ -367,7 +364,7 @@ LUA_FUNCTION(Nav_FullGeneration)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	Nav *nav = GetNav(L, 1);
+	Nav *nav = LUA_GetNav(L, 1);
 
 	float StartTime = engine->Time();
 
@@ -383,7 +380,7 @@ LUA_FUNCTION(Nav_IsGenerated)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	Lua()->Push(GetNav(L, 1)->IsGenerated());
+	Lua()->Push(LUA_GetNav(L, 1)->IsGenerated());
 
 	return 1;
 }
@@ -393,7 +390,7 @@ LUA_FUNCTION(Nav_FindPath)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_FUNCTION);
 
-	Nav* nav = GetNav(L, 1);
+	Nav* nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
 
@@ -429,7 +426,7 @@ LUA_FUNCTION(Nav_FindPathImmediate)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	Nav* nav = GetNav(L, 1);
+	Nav* nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
 	info->nav = nav;
@@ -447,7 +444,7 @@ LUA_FUNCTION(Nav_FindPathImmediate)
 
 		for(int i = 0; i < info->path.Count(); i++)
 		{
-			PushNode(L, info->path[i]);
+			LUA_PushNode(L, info->path[i]);
 
 			ILuaObject *node = Lua()->GetObject();
 			pathTable = Lua()->GetObject(-2);
@@ -474,7 +471,7 @@ LUA_FUNCTION(Nav_FindPathHull)
 	Lua()->CheckType(3, GLua::TYPE_VECTOR);
 	Lua()->CheckType(4, GLua::TYPE_FUNCTION);
 
-	Nav* nav = GetNav(L, 1);
+	Nav* nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t();
 
@@ -488,8 +485,8 @@ LUA_FUNCTION(Nav_FindPathHull)
 		info->abort = false;
 		info->findPath = true;
 		info->hull = true;
-		info->mins = GMOD_GetVector(L, 2);
-		info->maxs = GMOD_GetVector(L, 3);
+		info->mins = LUA_GetVector(L, 2);
+		info->maxs = LUA_GetVector(L, 3);
 		info->funcRef = Lua()->GetReference(4);
 
 		JobQueue.AddToTail(info);
@@ -514,15 +511,15 @@ LUA_FUNCTION(Nav_FindPathHullImmediate)
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 	Lua()->CheckType(3, GLua::TYPE_VECTOR);
 
-	Nav* nav = GetNav(L, 1);
+	Nav* nav = LUA_GetNav(L, 1);
 
 	JobInfo_t *info = new JobInfo_t;
 	info->nav = nav;
 	info->abort = false;
 	info->findPath = true;
 	info->hull = true;
-	info->mins = GMOD_GetVector(L, 2);
-	info->maxs = GMOD_GetVector(L, 3);
+	info->mins = LUA_GetVector(L, 2);
+	info->maxs = LUA_GetVector(L, 3);
 
 	nav->ExecuteFindPath(info, nav->GetStart(), nav->GetEnd());
 
@@ -534,7 +531,7 @@ LUA_FUNCTION(Nav_FindPathHullImmediate)
 
 		for(int i = 0; i < info->path.Count(); i++)
 		{
-			PushNode(L, info->path[i]);
+			LUA_PushNode(L, info->path[i]);
 
 			ILuaObject *node = Lua()->GetObject();
 			pathTable = Lua()->GetObject(-2);
@@ -558,7 +555,7 @@ LUA_FUNCTION(Nav_GetHeuristic)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	Lua()->Push((float)GetNav(L, 1)->GetHeuristic());
+	Lua()->Push((float)LUA_GetNav(L, 1)->GetHeuristic());
 
 	return 1;
 }
@@ -567,7 +564,7 @@ LUA_FUNCTION(Nav_GetStart)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	PushNode(L, GetNav(L, 1)->GetStart());
+	LUA_PushNode(L, LUA_GetNav(L, 1)->GetStart());
 
 	return 1;
 }
@@ -576,7 +573,7 @@ LUA_FUNCTION(Nav_GetEnd)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	PushNode(L, GetNav(L, 1)->GetEnd());
+	LUA_PushNode(L, LUA_GetNav(L, 1)->GetEnd());
 
 	return 1;
 }
@@ -586,7 +583,7 @@ LUA_FUNCTION(Nav_SetHeuristic)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_NUMBER);
 
-	GetNav(L, 1)->SetHeuristic(Lua()->GetNumber(2));
+	LUA_GetNav(L, 1)->SetHeuristic(Lua()->GetNumber(2));
 
 	return 0;
 }
@@ -596,7 +593,7 @@ LUA_FUNCTION(Nav_SetStart)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, NODE_TYPE);
 
-	GetNav(L, 1)->SetStart(GetNode(L, 2));
+	LUA_GetNav(L, 1)->SetStart(LUA_GetNode(L, 2));
 
 	return 0;
 }
@@ -606,7 +603,7 @@ LUA_FUNCTION(Nav_SetEnd)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, NODE_TYPE);
 
-	GetNav(L, 1)->SetEnd(GetNode(L, 2));
+	LUA_GetNav(L, 1)->SetEnd(LUA_GetNode(L, 2));
 
 	return 0;
 }
@@ -616,7 +613,7 @@ LUA_FUNCTION(Nav_GetNode)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 
-	PushNode(L, GetNav(L, 1)->GetNode(GMOD_GetVector(L, 2)));
+	LUA_PushNode(L, LUA_GetNav(L, 1)->GetNode(LUA_GetVector(L, 2)));
 
 	return 1;
 }
@@ -626,42 +623,7 @@ LUA_FUNCTION(Nav_GetClosestNode)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 
-	PushNode(L, GetNav(L, 1)->GetClosestNode(GMOD_GetVector(L, 2)));
-
-	return 1;
-}
-
-LUA_FUNCTION(Nav_GetNodesInSphere)
-{
-	Lua()->CheckType(1, NAV_TYPE);
-	Lua()->CheckType(2, GLua::TYPE_VECTOR);
-	Lua()->CheckType(3, GLua::TYPE_NUMBER);
-
-	Vector& vec = GMOD_GetVector(L, 2);
-	int radius = Lua()->GetNumber(3);
-
-	NodeList_t& nodes = GetNav(L, 1)->GetNodes();
-
-	ILuaObject *NodeTable = Lua()->GetNewTable();
-	NodeTable->Push();
-	NodeTable->UnReference();
-
-	int tIndex = 1;
-
-	for(int i = 0; i < nodes.Count(); i++)
-	{
-		if(nodes[i]->GetPosition()->DistTo(vec) <= radius)
-		{
-			PushNode(L, nodes[i]);
-			ILuaObject *ObjNode = Lua()->GetObject();
-			NodeTable = Lua()->GetObject(-2);
-				NodeTable->SetMember((float)tIndex, ObjNode);
-				Lua()->Pop();
-			NodeTable->UnReference();
-			ObjNode->UnReference();
-			tIndex++;
-		}
-	}
+	LUA_PushNode(L, LUA_GetNav(L, 1)->GetClosestNode(LUA_GetVector(L, 2)));
 
 	return 1;
 }
@@ -671,7 +633,7 @@ LUA_FUNCTION(Nav_Save)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_STRING);
 
-	Lua()->Push(GetNav(L, 1)->Save(Lua()->GetString(2)));
+	Lua()->Push(LUA_GetNav(L, 1)->Save(Lua()->GetString(2)));
 
 	return 1;
 }
@@ -681,7 +643,7 @@ LUA_FUNCTION(Nav_Load)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_STRING);
 
-	Lua()->Push(GetNav(L, 1)->Load(Lua()->GetString(2)));
+	Lua()->Push(LUA_GetNav(L, 1)->Load(Lua()->GetString(2)));
 
 	return 1;
 }
@@ -690,7 +652,7 @@ LUA_FUNCTION(Nav_GetDiagonal)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	Lua()->Push(GetNav(L, 1)->GetDiagonal());
+	Lua()->Push(LUA_GetNav(L, 1)->GetDiagonal());
 
 	return 1;
 }
@@ -699,7 +661,7 @@ LUA_FUNCTION(Nav_SetDiagonal)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 
-	GetNav(L, 1)->SetDiagonal(Lua()->GetBool(2));
+	LUA_GetNav(L, 1)->SetDiagonal(Lua()->GetBool(2));
 
 	return 0;
 }
@@ -708,7 +670,7 @@ LUA_FUNCTION(Nav_GetGridSize)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 	
-	Lua()->Push((float)GetNav(L, 1)->GetGridSize());
+	Lua()->Push((float)LUA_GetNav(L, 1)->GetGridSize());
 
 	return 1;
 }
@@ -718,7 +680,7 @@ LUA_FUNCTION(Nav_SetGridSize)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_NUMBER);
 
-	GetNav(L, 1)->SetGridSize(Lua()->GetInteger(2));
+	LUA_GetNav(L, 1)->SetGridSize(Lua()->GetInteger(2));
 
 	return 0;
 }
@@ -727,7 +689,7 @@ LUA_FUNCTION(Nav_GetMask)
 {
 	Lua()->CheckType(1, NAV_TYPE);
 	
-	Lua()->Push((float)GetNav(L, 1)->GetMask());
+	Lua()->Push((float)LUA_GetNav(L, 1)->GetMask());
 
 	return 1;
 }
@@ -737,7 +699,7 @@ LUA_FUNCTION(Nav_SetMask)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_NUMBER);
 
-	GetNav(L, 1)->SetMask(Lua()->GetInteger(2));
+	LUA_GetNav(L, 1)->SetMask(Lua()->GetInteger(2));
 
 	return 0;
 }
@@ -748,7 +710,7 @@ LUA_FUNCTION(Nav_CreateNode)
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 	Lua()->CheckType(3, GLua::TYPE_VECTOR);
 
-	PushNode(L, GetNav(L, 1)->AddNode(GMOD_GetVector(L, 2), GMOD_GetVector(L, 3), NORTH, NULL)); // This dir doesn't matter
+	LUA_PushNode(L, LUA_GetNav(L, 1)->AddNode(LUA_GetVector(L, 2), LUA_GetVector(L, 3), NORTH, NULL)); // This dir doesn't matter
 
 	return 1;
 }
@@ -758,34 +720,10 @@ LUA_FUNCTION(Nav_RemoveNode)
 	Lua()->CheckType(1, NAV_TYPE);
 	Lua()->CheckType(2, NODE_TYPE);
 
-	GetNav(L, 1)->RemoveNode(GetNode(L, 2));
+	LUA_GetNav(L, 1)->RemoveNode(LUA_GetNode(L, 2));
 
 	return 0;
 }
-
-#ifdef SASSILIZATION
-LUA_FUNCTION(Nav_Flood)
-{
-	Lua()->CheckType(1, NAV_TYPE);
-	Lua()->CheckType(2, Type::TABLE);
-	
-	ILuaObject* tab = Lua()->GetObject(2);
-	
-	GetNav(L, 1)->Flood(L, tab->GetMembers()); //Lua()->GetAllTableMembers(2));
-
-	return 1;
-}
-
-LUA_FUNCTION(Nav_GetTerritory)
-{
-	Lua()->CheckType(1, NAV_TYPE);
-	Lua()->CheckType(2, Type::VECTOR);
-	
-	Lua()->Push((float)(GetNav(L, 1)->GetTerritory(GMOD_GetVector(L, 2))));
-
-	return 1;
-}
-#endif
 
 ///////////////////////////////////////////////
 
@@ -794,7 +732,7 @@ LUA_FUNCTION(Node__eq)
 	Lua()->CheckType(1, NODE_TYPE);
 	Lua()->CheckType(2, NODE_TYPE);
 
-	Lua()->Push((bool)(GetNode(L, 1)->GetID() == GetNode(L, 2)->GetID()));
+	Lua()->Push((bool)(LUA_GetNode(L, 1)->GetID() == LUA_GetNode(L, 2)->GetID()));
 
 	return 1;
 }
@@ -803,7 +741,7 @@ LUA_FUNCTION(Node_GetID)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	Lua()->Push((float)GetNode(L, 1)->GetID() + 1);
+	Lua()->Push((float)LUA_GetNode(L, 1)->GetID() + 1);
 
 	return 1;
 }
@@ -812,7 +750,7 @@ LUA_FUNCTION(Node_GetPosition)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	GMOD_PushVector(L, GetNode(L, 1)->vecPos);
+	LUA_PushVector(L, LUA_GetNode(L, 1)->vecPos);
 
 	return 1;
 }
@@ -821,7 +759,7 @@ LUA_FUNCTION(Node_GetNormal)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	GMOD_PushVector(L, GetNode(L, 1)->vecNormal);
+	LUA_PushVector(L, LUA_GetNode(L, 1)->vecNormal);
 
 	return 1;
 }
@@ -830,7 +768,7 @@ LUA_FUNCTION(Node_IsDisabled)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	Lua()->Push(GetNode(L, 1)->IsDisabled());
+	Lua()->Push(LUA_GetNode(L, 1)->IsDisabled());
 
 	return 1;
 }
@@ -840,7 +778,7 @@ LUA_FUNCTION(Node_SetDisabled)
 	Lua()->CheckType(1, NODE_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_BOOL);
 
-	GetNode(L, 1)->SetDisabled(Lua()->GetBool(2));
+	LUA_GetNode(L, 1)->SetDisabled(Lua()->GetBool(2));
 
 	return 0;
 
@@ -850,7 +788,7 @@ LUA_FUNCTION(Node_GetConnections)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	Node *node = GetNode(L, 1);
+	Node *node = LUA_GetNode(L, 1);
 
 	// Push the table on the stack to survive past 510 calls!
 	ILuaObject *NodeTable = Lua()->GetNewTable();
@@ -864,7 +802,7 @@ LUA_FUNCTION(Node_GetConnections)
 		Connection = node->GetConnectedNode((NavDirType)Dir);
 		if(Connection != NULL)
 		{
-			PushNode(L, Connection);
+			LUA_PushNode(L, Connection);
 			ILuaObject *ObjNode = Lua()->GetObject();
 			NodeTable = Lua()->GetObject(2);
 				NodeTable->SetMember((float)Dir, ObjNode);
@@ -881,7 +819,7 @@ LUA_FUNCTION(Node_GetScoreG)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	Lua()->Push(GetNode(L, 1)->GetScoreG());
+	Lua()->Push(LUA_GetNode(L, 1)->GetScoreG());
 
 	return 1;
 }
@@ -890,7 +828,7 @@ LUA_FUNCTION(Node_GetScoreF)
 {
 	Lua()->CheckType(1, NODE_TYPE);
 
-	Lua()->Push(GetNode(L, 1)->GetScoreF());
+	Lua()->Push(LUA_GetNode(L, 1)->GetScoreF());
 
 	return 1;
 }
@@ -900,8 +838,8 @@ LUA_FUNCTION(Node_IsConnected)
 	Lua()->CheckType(1, NODE_TYPE);
 	Lua()->CheckType(2, NODE_TYPE);
 
-	Node *Node1 = GetNode(L, 1);
-	Node *Node2 = GetNode(L, 2);
+	Node *Node1 = LUA_GetNode(L, 1);
+	Node *Node2 = LUA_GetNode(L, 2);
 
 	Node *Connection;
 	for(int Dir = NORTH; Dir < NUM_DIRECTIONS_MAX; Dir++)
@@ -925,7 +863,7 @@ LUA_FUNCTION(Node_SetNormal)
 	Lua()->CheckType(1, NODE_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 
-	GetNode(L, 1)->SetNormal(GMOD_GetVector(L, 2));
+	LUA_GetNode(L, 1)->SetNormal(LUA_GetVector(L, 2));
 
 	return 0;
 }
@@ -935,7 +873,7 @@ LUA_FUNCTION(Node_SetPosition)
 	Lua()->CheckType(1, NODE_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_VECTOR);
 
-	GetNode(L, 1)->SetPosition(GMOD_GetVector(L, 2));
+	LUA_GetNode(L, 1)->SetPosition(LUA_GetVector(L, 2));
 
 	return 0;
 }
@@ -946,8 +884,8 @@ LUA_FUNCTION(Node_ConnectTo)
 	Lua()->CheckType(2, NODE_TYPE);
 	Lua()->CheckType(3, GLua::TYPE_NUMBER);
 
-	Node *Node1 = GetNode(L, 1);
-	Node *Node2 = GetNode(L, 2);
+	Node *Node1 = LUA_GetNode(L, 1);
+	Node *Node2 = LUA_GetNode(L, 2);
 	NavDirType Dir = (NavDirType)Lua()->GetInteger(3);
 
 	Node1->ConnectTo(Node2, Dir);
@@ -966,7 +904,7 @@ LUA_FUNCTION(Node_RemoveConnection)
 	Lua()->CheckType(1, NODE_TYPE);
 	Lua()->CheckType(2, GLua::TYPE_NUMBER);
 
-	Node *Node1 = GetNode(L, 1);
+	Node *Node1 = LUA_GetNode(L, 1);
 	NavDirType Dir = (NavDirType)Lua()->GetInteger(2);
 
 	Node *Node2 = Node1->GetConnectedNode(Dir);
@@ -1004,23 +942,6 @@ int Init(lua_State* L)
 	if(!enginetrace)
 	{
 		Lua()->Error("gm_navigation: Missing IEngineTrace interface.\n");
-	}
-
-	CreateInterfaceFn fsFactory;
-
-	fsFactory = Sys_GetFactory("filesystem_steam.dll");
-
-	if(fsFactory)
-	{
-		filesystem = (IFileSystem*)fsFactory(FILESYSTEM_INTERFACE_VERSION, NULL);
-		if(!filesystem)
-		{
-			Lua()->ErrorNoHalt("gm_navigation: Missing IFileSystem interface.\n");
-		}
-	}
-	else
-	{
-		Lua()->ErrorNoHalt("gm_navigation: Missing fsFactory\n");
 	}
 
 #ifndef USE_BOOST_THREADS
@@ -1072,6 +993,8 @@ int Init(lua_State* L)
 		ILuaObject *NavIndex = Lua()->GetNewTable();
 			NavIndex->SetMember("GetNodeByID", Nav_GetNodeByID);
 			NavIndex->SetMember("GetNodes", Nav_GetNodes);
+			NavIndex->SetMember("GetNearestNodes", Nav_GetNearestNodes);
+
 			NavIndex->SetMember("GetNodeTotal", Nav_GetNodeTotal);
 
 			NavIndex->SetMember("AddWalkableSeed", Nav_AddGroundSeed); // TODO: Remove
@@ -1097,7 +1020,8 @@ int Init(lua_State* L)
 			NavIndex->SetMember("SetEnd", Nav_SetEnd);
 			NavIndex->SetMember("GetNode", Nav_GetNode);
 			NavIndex->SetMember("GetClosestNode", Nav_GetClosestNode);
-			NavIndex->SetMember("GetNodesInSphere", Nav_GetNodesInSphere);
+			NavIndex->SetMember("GetNearestNodes", Nav_GetNearestNodes);
+			NavIndex->SetMember("GetNodesInSphere", Nav_GetNearestNodes);
 			NavIndex->SetMember("Save", Nav_Save);
 			NavIndex->SetMember("Load", Nav_Load);
 			NavIndex->SetMember("GetDiagonal", Nav_GetDiagonal);
@@ -1108,12 +1032,6 @@ int Init(lua_State* L)
 			NavIndex->SetMember("SetMask", Nav_SetMask);
 			NavIndex->SetMember("CreateNode", Nav_CreateNode);
 			NavIndex->SetMember("RemoveNode", Nav_RemoveNode);
-
-#ifdef SASSILIZATION
-			NavIndex->SetMember("Flood", Nav_Flood);
-			NavIndex->SetMember("GetTerritory", Nav_GetTerritory);
-#endif
-
 		MetaNav->SetMember("__index", NavIndex);
 		NavIndex->UnReference();
 	MetaNav->UnReference();
@@ -1158,14 +1076,7 @@ int Init(lua_State* L)
 #endif
 
 #ifdef FILEBUG
-	if(filesystem == NULL)
-	{
-		pDebugFile = fopen("garrysmod/data/nav/filebug.txt", "a+");
-	}
-	else
-	{
-		fh = filesystem->Open("data/nav/filebug.txt", "a+", "MOD");
-	}
+	pDebugFile = fopen("garrysmod/data/nav/filebug.txt", "a+");
 	FILEBUG_WRITE("Opened Module\n");
 #endif
 
@@ -1215,12 +1126,7 @@ int Shutdown(lua_State* L)
 	}
 
 #ifdef FILEBUG
-	if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE)
-	{
-		filesystem->FPrintf(fh, "Closed Module\n");
-		filesystem->Close(fh);
-	}
-	else if(pDebugFile != NULL)
+	if(pDebugFile != NULL)
 	{
 		fputs("Closed Module\n", pDebugFile);
 		fclose(pDebugFile);

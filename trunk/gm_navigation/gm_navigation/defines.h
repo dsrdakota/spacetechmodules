@@ -8,11 +8,9 @@
 
 #define USE_BOOST_THREADS
 
-#define SASSILIZATION
-
 //#define FILEBUG
 
-#define FILEBUG_WRITE(...) if(filesystem != NULL && fh != FILESYSTEM_INVALID_HANDLE) { filesystem->FPrintf(fh, __VA_ARGS__);  filesystem->Flush(fh); } else if(pDebugFile != NULL) { fprintf(pDebugFile, __VA_ARGS__); fflush(pDebugFile); }
+#define FILEBUG_WRITE(...) if(pDebugFile != NULL) { fprintf(pDebugFile, __VA_ARGS__); fflush(pDebugFile); }
 
 // Version for save files
 #define NAV_VERSION 1
