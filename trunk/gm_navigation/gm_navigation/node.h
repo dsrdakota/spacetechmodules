@@ -78,15 +78,16 @@ struct JobInfo_t
 #endif
 	Nav* nav;
 	bool abort;
+	bool finished;
 	bool findPath;
 	bool foundPath;
 	bool hull;
 	Vector mins;
 	Vector maxs;
 	CUtlVector<Node*> path;
-	int funcRef;
+	ILuaObject *objFunc;
+	ILuaObject *objUpdate;
 	time_t updateTime;
-	int updateRef;
 };
 
 #endif

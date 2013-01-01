@@ -31,7 +31,14 @@ void LUA_PushNav(lua_State* L, Nav *nav)
 	if(nav)
 	{
 		ILuaObject* meta = Lua()->GetMetaTable(NAV_NAME, NAV_TYPE);
+		if(!meta->isTable())
+		{
+			Lua()->Push(false);
+		}
+		else
+		{
 			Lua()->PushUserData(meta, nav, NAV_TYPE);
+		}
 		meta->UnReference();
 	}
 	else
@@ -479,6 +486,9 @@ void Nav::ResetGeneration()
 	airSeedIndex = 0;
 	currentNode = NULL;
 
+	nodeStart = NULL;
+	nodeEnd = NULL;
+
 	generating = true;
 	generated = false;
 	generatingGround = true;
@@ -893,6 +903,8 @@ bool Nav::Save(const char *Filename)
 		return false;
 	}
 
+	lock.Lock();
+
 	Node *node, *connection;
 
 	int iNodeConnections = 0;
@@ -941,6 +953,8 @@ bool Nav::Save(const char *Filename)
 
 	fclose(pFile);
 
+	lock.Unlock();
+
 	return true;
 }
 
@@ -960,7 +974,12 @@ bool Nav::Load(const char *Filename)
 		return false;
 	}
 
+	lock.Lock();
+
 	Node *node;
+
+	nodeStart = NULL;
+	nodeEnd = NULL;
 
 	nodes.RemoveAll();
 	kd_free(nodeTree);
@@ -1013,6 +1032,8 @@ bool Nav::Load(const char *Filename)
 
 	////////////////
 
+	lock.Unlock();
+
 	return true;
 }
 
@@ -1049,41 +1070,50 @@ Node *Nav::GetClosestNode(const Vector &Pos) const
 	return pNodeClosest;
 	*/
 
-	kdres *res = kd_nearest3f(nodeTree, Pos.x, Pos.y, Pos.z);
-	if(!kd_res_end(res))
+	Node *pNode = NULL;
+
+	kdres *results = kd_nearest3f(nodeTree, Pos.x, Pos.y, Pos.z);
+	if(results != NULL && !kd_res_end(results))
 	{
-		return (Node*)kd_res_item_data(res);
+		pNode = (Node*)kd_res_item_data(results);
 	}
 
-	return NULL;
+	if(results != NULL)
+	{
+		kd_res_free(results);
+	}
+
+	return pNode;
 }
 
 void Nav::GetNearestNodes(lua_State* L, const Vector &pos, const float range) const
 {
 	int count = 1;
-	struct kdres *results;
 	double pt[3] = { pos.x, pos.y, pos.z };
 	
 	ILuaObject *NodeTable = Lua()->GetNewTable();
 	NodeTable->Push();
 	NodeTable->UnReference();
 
-	//if( !generated ) return;
-	
-	results = kd_nearest_range( nodeTree, pt, range );
-	while( !kd_res_end( results ) )
+	kdres *results = kd_nearest_range(nodeTree, pt, range);
+
+	while(results != NULL && !kd_res_end(results))
 	{
-		LUA_PushNode(L, (Node*)kd_res_item_data( results ));
+		LUA_PushNode(L, (Node*)kd_res_item_data(results));
 		ILuaObject *ObjNode = Lua()->GetObject();
 		NodeTable = Lua()->GetObject(-2);
 			NodeTable->SetMember((float)count++, ObjNode);
 			Lua()->Pop();
 		NodeTable->UnReference();
 		ObjNode->UnReference();
-		kd_res_next( results );
+
+		kd_res_next(results);
 	}
 	
-	kd_res_free( results );
+	if(results != NULL)
+	{
+		kd_res_free(results);
+	}
 }
 
 void Nav::Reset()
@@ -1178,6 +1208,10 @@ void Nav::FindPathQueue(JobInfo_t *info)
 
 void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 {
+#ifdef FILEBUG
+	FILEBUG_WRITE("ExecuteFindPath\n");
+#endif
+
 	lock.Lock();
 	Reset();
 
@@ -1185,6 +1219,9 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 
 	if(start == NULL || end == NULL || start == end)
 	{
+#ifdef FILEBUG
+		FILEBUG_WRITE("Stopped\n");
+#endif
 		lock.Unlock();
 		return;
 	}
@@ -1263,6 +1300,10 @@ void Nav::ExecuteFindPath(JobInfo_t *info, Node *start, Node *end)
 		info->path.AddToHead(current);
 		current = current->GetAStarParent();
 	}
+
+#ifdef FILEBUG
+	FILEBUG_WRITE("FindPath Done\n");
+#endif
 
 	lock.Unlock();
 }
