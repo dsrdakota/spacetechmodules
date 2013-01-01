@@ -5,7 +5,6 @@
 
 #include <interface.h>
 #include "eiface.h"
-#include "filesystem.h"
 #include "engine/ienginetrace.h"
 #include "defines.h"
 
@@ -16,11 +15,9 @@
 IThreadPool* threadPool;
 #endif
 
-//#ifdef FILEBUG
-	FileHandle_t fh = FILESYSTEM_INVALID_HANDLE;
+#ifdef FILEBUG
 	FILE *pDebugFile = NULL;
-//#endif
+#endif
 
 IVEngineServer *engine = NULL;
-IFileSystem *filesystem = NULL;
 IEngineTrace *enginetrace = NULL;

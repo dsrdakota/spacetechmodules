@@ -6,6 +6,25 @@
 #include "node.h"
 #include "tier0/memdbgon.h"
 
+Node* LUA_GetNode(lua_State* L, int Pos)
+{
+	return (Node*)Lua()->GetUserData(Pos);
+}
+
+void LUA_PushNode(lua_State* L, Node *node)
+{
+	if(node)
+	{
+		ILuaObject* meta = Lua()->GetMetaTable(NODE_NAME, NODE_TYPE);
+			Lua()->PushUserData(meta, node, NODE_TYPE);
+		meta->UnReference();
+	}
+	else
+	{
+		Lua()->Push(false);
+	}
+}
+
 Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 {
 	iID = -1;
@@ -27,17 +46,12 @@ Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 	bDisabled = false;
 	nodeAStarParent = NULL;
 
-#ifdef SASSILIZATION
-	border = NULL;
-	next = NULL;
-	prev = NULL;
-#endif
+	customData = NULL;
 }
 
 Node::~Node()
 {
 	Msg("Deconstructed Node!?\n");
-	//delete [] &connections;
 }
 
 void Node::ConnectTo(Node *node, NavDirType Dir)
@@ -155,35 +169,3 @@ void Node::SetPosition(const Vector &Position)
 {
 	vecPos = Position;
 }
-
-#ifdef SASSILIZATION
-Border* Node::GetBorder() const
-{
-	return border;
-}
-
-void Node::SetBorder(Border *b)
-{
-	border = b;
-}
-
-Node* Node::GetNext() const
-{
-	return next;
-}
-
-void Node::SetNext(Node *n)
-{
-	next = n;
-}
-
-Node* Node::GetPrev() const
-{
-	return prev;
-}
-
-void Node::SetPrev(Node *p)
-{
-	prev = p;
-}
-#endif

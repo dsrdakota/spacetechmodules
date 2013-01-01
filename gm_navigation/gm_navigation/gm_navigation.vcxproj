@@ -130,6 +130,7 @@ copy "$(TargetPath)" "E:\Servers\GMOD\orangebox\garrysmod\lua\bin"</Command>
     <ClCompile Include="..\..\..\blackawps modules\backwards_headers\ILuaInterface.cpp" />
     <ClCompile Include="..\..\..\blackawps modules\backwards_headers\ILuaModuleManager.cpp" />
     <ClCompile Include="..\..\..\blackawps modules\backwards_headers\ILuaObject.cpp" />
+    <ClCompile Include="kdtree.c" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="nav.cpp" />
     <ClCompile Include="node.cpp" />
@@ -150,6 +151,7 @@ copy "$(TargetPath)" "E:\Servers\GMOD\orangebox\garrysmod\lua\bin"</Command>
     <ClInclude Include="..\..\..\blackawps modules\backwards_headers\LuaBase.h" />
     <ClInclude Include="..\..\..\blackawps modules\backwards_headers\Types.h" />
     <ClInclude Include="..\..\..\blackawps modules\backwards_headers\UserData.h" />
+    <ClInclude Include="kdtree.h" />
     <ClInclude Include="main.h" />
     <ClInclude Include="nav.h" />
     <ClInclude Include="node.h" />

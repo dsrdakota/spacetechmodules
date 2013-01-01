@@ -19,6 +19,9 @@
     <ClCompile Include="..\..\..\blackawps modules\backwards_headers\ILuaObject.cpp">
       <Filter>LUA Headers</Filter>
     </ClCompile>
+    <ClCompile Include="kdtree.c">
+      <Filter>Source FIles</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="main.h">
@@ -56,6 +59,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\blackawps modules\backwards_headers\UserData.h">
       <Filter>LUA Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="kdtree.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
