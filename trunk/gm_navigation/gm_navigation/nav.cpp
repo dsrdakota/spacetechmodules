@@ -1021,7 +1021,12 @@ CUtlVector<Node*>& Nav::GetNodes()
 	return nodes;
 }
 
-Node *Nav::GetClosestNode(const Vector &Pos)
+const CUtlVector<Node*>& Nav::GetOpenedNodes() const
+{
+	return opened;
+}
+
+Node *Nav::GetClosestNode(const Vector &Pos) const
 {
 	/*
 	float fNodeDist;
@@ -1044,19 +1049,16 @@ Node *Nav::GetClosestNode(const Vector &Pos)
 	return pNodeClosest;
 	*/
 
-	if(generated)
+	kdres *res = kd_nearest3f(nodeTree, Pos.x, Pos.y, Pos.z);
+	if(!kd_res_end(res))
 	{
-		kdres *res = kd_nearest3f(nodeTree, Pos.x, Pos.y, Pos.z);
-		if(!kd_res_end(res))
-		{
-			return (Node*)kd_res_item_data(res);
-		}
+		return (Node*)kd_res_item_data(res);
 	}
 
 	return NULL;
 }
 
-void Nav::GetNearestNodes(lua_State* L, const Vector &pos, const float range)
+void Nav::GetNearestNodes(lua_State* L, const Vector &pos, const float range) const
 {
 	int count = 1;
 	struct kdres *results;
@@ -1066,7 +1068,7 @@ void Nav::GetNearestNodes(lua_State* L, const Vector &pos, const float range)
 	NodeTable->Push();
 	NodeTable->UnReference();
 
-	if( !generated ) return;
+	//if( !generated ) return;
 	
 	results = kd_nearest_range( nodeTree, pt, range );
 	while( !kd_res_end( results ) )
@@ -1331,4 +1333,9 @@ void Nav::SetEnd(Node *end)
 kdtree* Nav::GetNodeTree()
 {
 	return nodeTree;
+}
+
+CThreadMutex& Nav::GetLock()
+{
+	return lock;
 }

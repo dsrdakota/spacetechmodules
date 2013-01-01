@@ -6,8 +6,6 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#define USE_BOOST_THREADS
-
 //#define FILEBUG
 
 #define FILEBUG_WRITE(...) if(pDebugFile != NULL) { fprintf(pDebugFile, __VA_ARGS__); fflush(pDebugFile); }
