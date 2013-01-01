@@ -47,6 +47,8 @@ public:
 	Vector vecPos;
 	Vector vecNormal;
 
+	void* customData;
+
 private:
 	int iID;
 	Node *nodeParent;
@@ -60,8 +62,6 @@ private:
 	bool bDisabled;
 	float scoreF;
 	float scoreG;
-
-	void* customData;
 };
 
 Node* LUA_GetNode(lua_State* L, int Pos);

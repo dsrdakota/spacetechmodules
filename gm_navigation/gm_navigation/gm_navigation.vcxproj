@@ -63,7 +63,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <AdditionalIncludeDirectories>K:\Programming\hl2sdk-ob-valve;K:\Programming\hl2sdk-ob-valve/common;K:\Programming\hl2sdk-ob-valve/common/xbox;K:\Programming\hl2sdk-ob-valve/public;K:\Programming\hl2sdk-ob-valve/public/tier0;K:\Programming\hl2sdk-ob-valve/public/tier1;K:\Programming\hl2sdk-ob-valve/src/public/tier2;K:\Programming\hl2sdk-ob-valve/public/tier3;K:\Programming\hl2sdk-ob-valve/game/client;K:\Programming\hl2sdk-ob-valve/game/shared;K:\Programming\hl2sdk-ob-valve/game/server;K:\Programming\hl2sdk-ob-valve/src/utils/common;K:\Programming\hl2sdk-ob-valve/src/dlls;K:\Programming\hl2sdk-ob-valve/src/dlls/hl2_dll;K:\Programming\hl2sdk-ob-valve/src/episodic;K:\Programming\hl2sdk-ob-valve\public\vstdlib;K:\Programming\Garrysmod\blackawps modules\backwards_headers;K:\Programming\boost;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;GMMODULE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;GMMODULE;USE_BOOST_THREADS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -97,7 +97,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <AdditionalIncludeDirectories>K:\Programming\hl2sdk-ob-valve;K:\Programming\hl2sdk-ob-valve/common;K:\Programming\hl2sdk-ob-valve/common/xbox;K:\Programming\hl2sdk-ob-valve/public;K:\Programming\hl2sdk-ob-valve/public/tier0;K:\Programming\hl2sdk-ob-valve/public/tier1;K:\Programming\hl2sdk-ob-valve/src/public/tier2;K:\Programming\hl2sdk-ob-valve/public/tier3;K:\Programming\hl2sdk-ob-valve/game/client;K:\Programming\hl2sdk-ob-valve/game/shared;K:\Programming\hl2sdk-ob-valve/game/server;K:\Programming\hl2sdk-ob-valve/src/utils/common;K:\Programming\hl2sdk-ob-valve/src/dlls;K:\Programming\hl2sdk-ob-valve/src/dlls/hl2_dll;K:\Programming\hl2sdk-ob-valve/src/episodic;K:\Programming\hl2sdk-ob-valve\public\vstdlib;K:\Programming\Garrysmod\blackawps modules\backwards_headers;K:\Programming\boost;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>WIN32;LUA_SERVER;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;GMMODULE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;LUA_SERVER;GAME_DLL;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_WARNINGS;GMMODULE;USE_BOOST_THREADS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
