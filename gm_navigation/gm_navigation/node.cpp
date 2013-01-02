@@ -52,6 +52,11 @@ Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 Node::~Node()
 {
 	Msg("Deconstructed Node!?\n");
+	if(customData != NULL)
+	{
+		delete customData;
+		customData = NULL;
+	}
 }
 
 void Node::ConnectTo(Node *node, NavDirType Dir)
