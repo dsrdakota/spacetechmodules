@@ -1088,36 +1088,6 @@ Node *Nav::GetClosestNode(const Vector &Pos) const
 	return pNode;
 }
 
-void Nav::GetNearestNodes(lua_State* L, const Vector &pos, const float range) const
-{
-	int count = 1;
-	double pt[3] = { pos.x, pos.y, pos.z };
-	
-	ILuaObject *NodeTable = Lua()->GetNewTable();
-	NodeTable->Push();
-	NodeTable->UnReference();
-
-	kdres *results = kd_nearest_range(nodeTree, pt, range);
-
-	while(results != NULL && !kd_res_end(results))
-	{
-		LUA_PushNode(L, (Node*)kd_res_item_data(results));
-		ILuaObject *ObjNode = Lua()->GetObject();
-		NodeTable = Lua()->GetObject(-2);
-			NodeTable->SetMember((float)count++, ObjNode);
-			Lua()->Pop();
-		NodeTable->UnReference();
-		ObjNode->UnReference();
-
-		kd_res_next(results);
-	}
-	
-	if(results != NULL)
-	{
-		kd_res_free(results);
-	}
-}
-
 void Nav::Reset()
 {
 	Node *node;

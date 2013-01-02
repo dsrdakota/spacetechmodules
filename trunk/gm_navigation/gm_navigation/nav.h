@@ -87,7 +87,6 @@ public:
 	CUtlVector<Node*>& GetNodes();
 	const CUtlVector<Node*>& GetOpenedNodes() const;
 	Node *GetClosestNode(const Vector &Pos) const;
-	void GetNearestNodes(lua_State* L, const Vector &pos, const float range) const;
 
 	float HeuristicDistance(const Vector *vecStartPos, const Vector *EndPos);
 	float ManhattanDistance(const Vector *vecStartPos, const Vector *EndPos);

@@ -259,7 +259,6 @@ LUA_FUNCTION(Nav_GetNearestNodes)
 	Vector pos = LUA_GetVector(L, 2);
 
 	int count = 1;
-	struct kdres *results;
 	double pt[3] = { pos.x, pos.y, pos.z };
 	
 	ILuaObject *NodeTable = Lua()->GetNewTable();
@@ -267,14 +266,10 @@ LUA_FUNCTION(Nav_GetNearestNodes)
 	NodeTable->UnReference();
 
 	Nav *nav = LUA_GetNav(L, 1);
-
-	if(!nav->IsGenerated())
-	{
-		return 1;
-	}
 	
-	results = kd_nearest_range(nav->GetNodeTree(), pt, Lua()->GetNumber(3));
-	while(!kd_res_end(results))
+	kdres *results = kd_nearest_range(nav->GetNodeTree(), pt, Lua()->GetNumber(3));
+
+	while(results != NULL && !kd_res_end(results))
 	{
 		LUA_PushNode(L, (Node*)kd_res_item_data(results));
 		ILuaObject *ObjNode = Lua()->GetObject();
@@ -287,7 +282,10 @@ LUA_FUNCTION(Nav_GetNearestNodes)
 		kd_res_next(results);
 	}
 	
-	kd_res_free(results);
+	if(results != NULL)
+	{
+		kd_res_free(results);
+	}
 
 	return 1;
 }
