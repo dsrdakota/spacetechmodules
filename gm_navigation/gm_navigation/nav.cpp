@@ -1034,6 +1034,8 @@ bool Nav::Load(const char *Filename)
 
 	lock.Unlock();
 
+	fclose(pFile);
+
 	return true;
 }
 
