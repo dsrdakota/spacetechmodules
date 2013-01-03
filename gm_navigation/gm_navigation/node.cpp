@@ -6,9 +6,14 @@
 #include "node.h"
 #include "tier0/memdbgon.h"
 
-Node* LUA_GetNode(lua_State* L, int Pos)
+Node* LUA_GetNode(lua_State* L, int pos)
 {
-	return (Node*)Lua()->GetUserData(Pos);
+	Node *pNode = (Node*)Lua()->GetUserData(pos);
+	if(pNode == NULL)
+	{
+		Lua()->LuaError("Invalid Node", pos);
+	}
+	return pNode;
 }
 
 void LUA_PushNode(lua_State* L, Node *node)
@@ -45,13 +50,14 @@ Node::Node(const Vector &Position, const Vector &Norm, Node *Par)
 	bClosed = false;
 	bDisabled = false;
 	nodeAStarParent = NULL;
+	scoreF = 0;
+	scoreG = 0;
 
 	customData = NULL;
 }
 
 Node::~Node()
 {
-	Msg("Deconstructed Node!?\n");
 	if(customData != NULL)
 	{
 		delete customData;

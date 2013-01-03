@@ -16,12 +16,12 @@ extern IThreadPool *threadPool;
 extern FileHandle_t fh;
 extern FILE* pDebugFile;
 
-Nav* LUA_GetNav(lua_State* L, int Pos)
+Nav* LUA_GetNav(lua_State* L, int pos)
 {
-	Nav* nav = (Nav*)Lua()->GetUserData(Pos);
+	Nav* nav = (Nav*)Lua()->GetUserData(pos);
 	if(nav == NULL)
 	{
-		Lua()->Error("Invalid Nav");
+		Lua()->LuaError("Invalid Nav", pos);
 	}
 	return nav;
 }
@@ -135,17 +135,21 @@ Nav::~Nav()
 	FILEBUG_WRITE("Deconstructing Nav\n");
 #endif
 	
-	Msg("Deconstructing Nav!?\n");
+	Msg("Deconstructing Nav: %p\n", this);
 
 #ifdef FILEBUG
 	FILEBUG_WRITE("Freeing nodes\n");
 #endif
 
-	nodes.PurgeAndDeleteElements();
-	//opened.PurgeAndDeleteElements();
-   // closed.PurgeAndDeleteElements();
-
 	kd_free(nodeTree);
+
+	for(int i=0; i < nodes.Count(); i++)
+	{
+		Node *pNode = nodes[i];
+		delete pNode;
+		pNode = NULL;
+	}
+	nodes.Purge();
 
 #ifdef FILEBUG
 	FILEBUG_WRITE("Freed nodes\n");
@@ -286,6 +290,9 @@ void Nav::RemoveNode(Node *node)
 
 	nodes.Remove(node->GetID());
 
+	delete node;
+	node = NULL;
+
 	// Update all node ids, removing a element from a utlvector will shift all the elements positions
 	for(int i = 0; i < nodes.Count(); i++)
 	{
@@ -294,11 +301,11 @@ void Nav::RemoveNode(Node *node)
 
 	kd_clear(nodeTree);
 
-	Node *node;
+	Node *pNode;
 	for(int i = 0; i < nodes.Count(); i++)
 	{
-		node = nodes[i];
-		kd_insert3f(nodeTree, node->vecPos.x, node->vecPos.y, node->vecPos.z, node);
+		pNode = nodes[i];
+		kd_insert3f(nodeTree, pNode->vecPos.x, pNode->vecPos.y, pNode->vecPos.z, pNode);
 	}
 
 }
@@ -493,9 +500,16 @@ void Nav::ResetGeneration()
 	generated = false;
 	generatingGround = true;
 
-	nodes.RemoveAll();
-	kd_free(nodeTree);
-	nodeTree = kd_create(3);
+	kd_clear(nodeTree);
+
+	for(int i=0; i < nodes.Count(); i++)
+	{
+		Node *pNode = nodes[i];
+		delete pNode;
+		pNode = NULL;
+	}
+
+	nodes.Purge();	
 }
 
 void Nav::SetupMaxDistance(const Vector &Pos, int MaxDistance)
@@ -981,9 +995,16 @@ bool Nav::Load(const char *Filename)
 	nodeStart = NULL;
 	nodeEnd = NULL;
 
-	nodes.RemoveAll();
-	kd_free(nodeTree);
-	nodeTree = kd_create(3);
+	kd_clear(nodeTree);
+
+	for(int i=0; i < nodes.Count(); i++)
+	{
+		Node *pNode = nodes[i];
+		delete pNode;
+		pNode = NULL;
+	}
+
+	nodes.Purge();
 
 	int fileVersion;
 	fscanf(pFile, "GM_NAVIGATION\t%d\n", &fileVersion);
