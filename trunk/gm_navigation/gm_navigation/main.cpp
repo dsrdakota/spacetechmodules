@@ -240,7 +240,7 @@ LUA_FUNCTION(Nav_GetNodes)
 	{
 		LUA_PushNode(L, Nodes[i]);
 		ILuaObject *ObjNode = Lua()->GetObject();
-		NodeTable = Lua()->GetObject(2);
+		NodeTable = Lua()->GetObject(-2);
 			NodeTable->SetMember((float)i + 1, ObjNode);
 			Lua()->Pop();
 		NodeTable->UnReference();
@@ -830,7 +830,6 @@ LUA_FUNCTION(Node_SetDisabled)
 	LUA_GetNode(L, 1)->SetDisabled(Lua()->GetBool(2));
 
 	return 0;
-
 }
 
 LUA_FUNCTION(Node_GetConnections)
@@ -853,13 +852,38 @@ LUA_FUNCTION(Node_GetConnections)
 		{
 			LUA_PushNode(L, Connection);
 			ILuaObject *ObjNode = Lua()->GetObject();
-			NodeTable = Lua()->GetObject(2);
+			NodeTable = Lua()->GetObject(-2);
 				NodeTable->SetMember((float)Dir, ObjNode);
 				Lua()->Pop();
 			NodeTable->UnReference();
 			ObjNode->UnReference();
 		}
 	}
+
+
+	return 1;
+}
+
+LUA_FUNCTION(Node_GetConnectedNode)
+{
+	Lua()->CheckType(1, NODE_TYPE);
+	Lua()->CheckType(2, GLua::TYPE_NUMBER);
+
+	int dir = Lua()->GetInteger(2);
+
+	if(dir >= 0 && dir < NUM_DIRECTIONS_MAX)
+	{
+		Node *pNode = LUA_GetNode(L, 1);
+
+		Node *pNodeConnection = pNode->GetConnectedNode((NavDirType)dir);
+		if(pNodeConnection != NULL)
+		{
+			LUA_PushNode(L, pNodeConnection);
+			return 1;
+		}
+	}
+
+	Lua()->Push(false);
 
 	return 1;
 }
@@ -1092,6 +1116,7 @@ int Init(lua_State* L)
 			NodeIndex->SetMember("GetPos", Node_GetPosition);
 			NodeIndex->SetMember("GetNormal", Node_GetNormal);
 			NodeIndex->SetMember("GetConnections", Node_GetConnections);
+			NodeIndex->SetMember("GetConnectedNode", Node_GetConnectedNode);
 			NodeIndex->SetMember("GetScoreF", Node_GetScoreF);
 			NodeIndex->SetMember("GetScoreG", Node_GetScoreG);
 			NodeIndex->SetMember("IsConnected", Node_IsConnected);
